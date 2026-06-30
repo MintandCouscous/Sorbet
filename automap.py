@@ -7,7 +7,7 @@ import time
 import re
 import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 import anthropic
@@ -228,12 +228,34 @@ COMPANY_TYPES = [
 ]
 
 COUNT_OPTIONS = {
-    "1": ("~100",         15),   # per-category cap → ~100-120 total
-    "2": ("~300",         40),
-    "3": ("~500",         65),
-    "4": ("~1000",       130),
-    "5": ("Full universe — no cap", 250),
+    "1": ("~10",           2),
+    "2": ("~20",           3),
+    "3": ("~50",           7),
+    "4": ("~100",         15),   # per-category cap → ~100-120 total
+    "5": ("~300",         40),
+    "6": ("~500",         65),
+    "7": ("~1000",       130),
+    "8": ("Full universe — no cap", 250),
 }
+
+# ── Exclusion list — companies already mapped, to skip ───────────────────────
+def _normalize_name(name: str) -> str:
+    """Lowercase, strip legal suffixes/punctuation for fuzzy de-dup matching."""
+    n = name.lower().strip()
+    n = re.sub(r"\b(private limited|pvt\.?\s*ltd\.?|limited|ltd\.?|llp|inc\.?|corporation|corp\.?)\b", "", n)
+    n = re.sub(r"[^\w\s]", "", n)
+    n = re.sub(r"\s+", " ", n).strip()
+    return n
+
+def _parse_company_list(raw: str) -> List[str]:
+    """Split a free-text block (newline or comma separated) into clean names."""
+    if not raw:
+        return []
+    parts = re.split(r"[\n,]+", raw)
+    return [p.strip() for p in parts if p.strip()]
+
+def _excluded_set(inp: Dict) -> set:
+    return {_normalize_name(n) for n in _parse_company_list(inp.get("exclude_companies", ""))}
 
 def _optional(prompt: str, example: str = "") -> str:
     """Optional input — blank is fine."""
@@ -313,15 +335,20 @@ def collect_inputs() -> Dict:
 
     company_types = _multiselect(COMPANY_TYPES, "Company types to include")
 
+    exclude_companies = _multiline(
+        "\nAlready mapped these companies? List them so they're skipped "
+        "(one per line, or leave blank to skip this step):"
+    ) if input("\nExclude any companies you've already mapped? [y/N]: ").strip().lower() == "y" else ""
+
     # ── How many companies ────────────────────────────────────────────────────
     print("\nHow many companies to map?")
     for k, (label, _) in COUNT_OPTIONS.items():
         print(f"  {k}. {label}")
     while True:
-        cnt = input("Choose [1-5]: ").strip()
+        cnt = input(f"Choose [1-{len(COUNT_OPTIONS)}]: ").strip()
         if cnt in COUNT_OPTIONS:
             break
-        print("  ↳ Enter 1–5.")
+        print(f"  ↳ Enter 1–{len(COUNT_OPTIONS)}.")
     count_label, per_cat_cap = COUNT_OPTIONS[cnt]
 
     return {
@@ -338,6 +365,7 @@ def collect_inputs() -> Dict:
         "specific_attrs":    specific_attrs    or "None",
         "what_looking_for":  what_looking_for  or "None",
         "company_types":     company_types,
+        "exclude_companies": exclude_companies,
         "per_cat_cap":       per_cat_cap,
         "count_label":       count_label,
         "date":              datetime.today().strftime("%d-%b-%y"),
@@ -412,11 +440,18 @@ def _companies_for_category(cat: Dict, inp: Dict) -> List[Dict]:
         else f"Target: list up to {cap} companies. Cast a wide net — include smaller and regional players."
     )
 
+    already_mapped = _parse_company_list(inp.get("exclude_companies", ""))
+    exclude_block = (
+        "\nAlready mapped — do NOT include these:\n" + "\n".join(f"  • {n}" for n in already_mapped)
+        if already_mapped else ""
+    )
+
     prompt = f"""Mandate: {side} for {inp['client']} ({inp['sub_sector']})
 
 Category: {cat['name']}
 Description: {cat['description']}
 {filter_block}
+{exclude_block}
 
 {universe_note}
 Include:
@@ -438,12 +473,14 @@ Return ONLY valid JSON:
 
 
 # ── Company discovery — Claude list + SerpAPI sweep ───────────────────────────
-def discover_companies(categories: List[Dict], inp: Dict) -> Dict[str, List[Dict]]:
-    results = {}
+def discover_companies(categories: List[Dict], inp: Dict, on_progress: Optional[Callable[[str], None]] = None) -> Dict[str, List[Dict]]:
+    log = on_progress if on_progress else print
+    results  = {}
+    excluded = _excluded_set(inp)
 
     for i, cat in enumerate(categories, 1):
         cat_name = cat["name"]
-        print(f"\n  [{i}/{len(categories)}] {cat_name}")
+        log(f"  [{i}/{len(categories)}] {cat_name}")
 
         # Claude generates companies for this category
         claude_cos = _companies_for_category(cat, inp)
@@ -452,7 +489,7 @@ def discover_companies(categories: List[Dict], inp: Dict) -> Dict[str, List[Dict
             key = co["name"].lower().strip()
             seen[key] = co
 
-        print(f"    Claude: {len(seen)} companies", end="", flush=True)
+        line = f"    Claude: {len(seen)} companies"
 
         # SerpAPI sweep — finds regional/unlisted players Claude may not know
         if SERP_AVAILABLE:
@@ -490,9 +527,17 @@ Rules:
                 time.sleep(0.3)
 
             added = len(seen) - len(claude_cos)
-            print(f" + {added} from search = {len(seen)} total")
-        else:
-            print()
+            line += f" + {added} from search = {len(seen)} total"
+
+        log(line)
+
+        # Hard post-filter — catches anything the prompt-level exclusion missed
+        if excluded:
+            before = len(seen)
+            seen = {k: v for k, v in seen.items() if _normalize_name(v["name"]) not in excluded}
+            skipped = before - len(seen)
+            if skipped:
+                log(f"    Skipped {skipped} already-mapped compan{'y' if skipped == 1 else 'ies'}")
 
         all_cos = list(seen.values())[:inp.get("per_cat_cap", MAX_COMPANIES_PER_CATEGORY)]
         results[cat_name] = all_cos
@@ -584,17 +629,17 @@ CRITICAL: Only include financial figures explicitly stated in the results. Do no
 
     return result
 
-def enrich_all(discovered: Dict[str, List[Dict]], inp: Dict) -> Dict[str, List[Dict]]:
+def enrich_all(discovered: Dict[str, List[Dict]], inp: Dict, on_progress: Optional[Callable[[str], None]] = None) -> Dict[str, List[Dict]]:
+    log = on_progress if on_progress else print
     total = sum(len(v) for v in discovered.values())
     done  = 0
-    print(f"\n[3/4] Enriching {total} companies (descriptions + rationale via Claude; financials via search where available)...")
 
     enriched: Dict[str, List[Dict]] = {}
     for category, companies in discovered.items():
         enriched[category] = []
         for co in companies:
             done += 1
-            print(f"  [{done}/{total}] {co['name']}")
+            log(f"  [{done}/{total}] {co['name']}")
             enriched[category].append(_enrich_one(co, category, inp))
             time.sleep(0.2)
 
@@ -824,7 +869,10 @@ def main():
 
     print("\n[2/4] Building company universe (Claude + search):")
     discovered = discover_companies(strategy["categories"], inp)
-    enriched   = enrich_all(discovered, inp)
+
+    total_disc = sum(len(v) for v in discovered.values())
+    print(f"\n[3/4] Enriching {total_disc} companies (descriptions + rationale via Claude; financials via search where available)...")
+    enriched = enrich_all(discovered, inp)
 
     # Output to Downloads
     date_tag = datetime.today().strftime("%d%b%y")

@@ -409,9 +409,15 @@ with col_form:
         if type_cols[i % 2].checkbox(ct, value=True, key=f"ct_{i}"):
             company_types.append(ct)
 
+    exclude_companies = st.text_area(
+        "Already mapped — exclude these",
+        placeholder="One company per line (or comma-separated). They'll be skipped entirely.",
+        height=80,
+    )
+
     st.markdown('<div class="sec">Volume</div>', unsafe_allow_html=True)
     count_labels = [v[0] for v in COUNT_OPTIONS.values()]
-    count_choice = st.radio("Companies to map", count_labels, index=2, label_visibility="collapsed")
+    count_choice = st.radio("Companies to map", count_labels, index=3, label_visibility="collapsed")
     per_cat_cap  = next(cap for lbl, cap in COUNT_OPTIONS.values() if lbl == count_choice)
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -482,6 +488,7 @@ with col_out:
             "specific_attrs":   specific_attrs.strip()   or "None",
             "what_looking_for": what_looking_for.strip() or "None",
             "company_types":    company_types,
+            "exclude_companies": exclude_companies.strip(),
             "per_cat_cap":      per_cat_cap,
             "count_label":      count_choice,
             "date":             datetime.today().strftime("%d-%b-%y"),
@@ -509,22 +516,18 @@ with col_out:
                 add_log(f"     • {c['name']}")
 
             add_log("\n[2/4] Building company universe...")
-            cap = _Quiet()
-            with contextlib.redirect_stdout(cap):
-                discovered = discover_companies(strategy["categories"], inp)
+            discovered = discover_companies(strategy["categories"], inp, on_progress=add_log)
             total_disc = sum(len(v) for v in discovered.values())
             add_log(f"  → {total_disc} companies identified")
 
             add_log(f"\n[3/4] Enriching {total_disc} companies...")
-            cap = _Quiet()
-            with contextlib.redirect_stdout(cap):
-                enriched = enrich_all(discovered, inp)
+            enriched = enrich_all(discovered, inp, on_progress=add_log)
             add_log("  → Enrichment complete")
 
             add_log("\n[4/4] Generating Excel...")
             with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
                 tmp_path = tmp.name
-            with contextlib.redirect_stdout(cap):
+            with contextlib.redirect_stdout(_Quiet()):
                 generate_excel(strategy, enriched, inp, tmp_path)
 
             with open(tmp_path, "rb") as f:
