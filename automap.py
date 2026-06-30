@@ -238,6 +238,12 @@ COUNT_OPTIONS = {
     "8": ("Full universe — no cap", 250),
 }
 
+# ── Geography scope — defaults to India, but respects an explicit override ───
+def _geo_scope(inp: Dict) -> str:
+    """Geography to search within. Defaults to India; honors international targets."""
+    tg = (inp.get("target_geography") or "Pan-India").strip()
+    return "India" if tg == "Pan-India" else tg
+
 # ── Exclusion list — companies already mapped, to skip ───────────────────────
 def _normalize_name(name: str) -> str:
     """Lowercase, strip legal suffixes/punctuation for fuzzy de-dup matching."""
@@ -376,6 +382,7 @@ def generate_strategy(inp: Dict) -> Dict:
     """Step 1: Get categories + rationale + search queries (no companies yet)."""
     side   = "sell-side (company looking to sell)" if inp["is_sellside"] else "buy-side (company looking to acquire)"
     target = "potential buyers / acquirers" if inp["is_sellside"] else "potential acquisition targets"
+    geo    = _geo_scope(inp)
 
     filters = f"""
 Target company filters:
@@ -393,9 +400,9 @@ Client geography: {inp['geography']}
 M&A motivations: {', '.join(inp['motivations'])}
 {filters}
 
-Identify 6–8 distinct, non-overlapping categories of {target} in India that match the filters above.
-For each category also provide 6 targeted Google search queries to find regional / unlisted / smaller players — vary by state, product sub-type, company size, and industry directories.
-Tailor queries to the target geography specified above.
+Identify 6–8 distinct, non-overlapping categories of {target} in {geo} that match the filters above.
+For each category also provide 6 targeted Google search queries to find regional / unlisted / smaller players — vary by country/region, product sub-type, company size, and industry directories.
+Tailor queries to the target geography specified above ({geo}) — if it spans multiple countries, distribute search queries across all of them rather than defaulting to one.
 
 Return ONLY valid JSON:
 {{
@@ -411,18 +418,19 @@ Return ONLY valid JSON:
 }}"""
 
     print("\n[1/4] Generating mapping strategy...")
-    return _json(_ask(prompt, max_tokens=4000))
+    return _json(_ask(prompt, max_tokens=6000))
 
 
 def _companies_for_category(cat: Dict, inp: Dict) -> List[Dict]:
     """Ask Claude for companies in one category — respects filters and count target."""
     side = "sell-side" if inp["is_sellside"] else "buy-side"
     cap  = inp.get("per_cat_cap", 65)
+    geo  = _geo_scope(inp)
 
     # Build filter block — only show non-trivial filters to keep prompt focused
     filter_lines = []
     if inp["target_geography"] != "Pan-India":
-        filter_lines.append(f"  Geography: {inp['target_geography']} (prioritise, but include Pan-India players too if relevant)")
+        filter_lines.append(f"  Geography: {inp['target_geography']} (this is the target market — companies must operate or be headquartered here)")
     if inp["revenue_range"] != "No filter":
         filter_lines.append(f"  Revenue:   {inp['revenue_range']}")
     types = inp.get("company_types", [])
@@ -455,14 +463,14 @@ Description: {cat['description']}
 
 {universe_note}
 Include:
-  • Large listed AND mid-size private/unlisted companies
-  • Pan-India AND state/regional players
-  • Family-owned, PE-backed, JVs, subsidiaries, PSUs/cooperatives
+  • Large established AND mid-size private/unlisted companies
+  • Major-city AND regional/secondary-market players within {geo}
+  • Family-owned, PE-backed, JVs, subsidiaries, state-owned/cooperatives — whichever ownership types are common in {geo}
 Do NOT invent names. Only include companies you are confident exist.
 Exclude {inp['client']} itself.
 
 Return ONLY valid JSON:
-{{"companies": [{{"name": "Full company name", "location": "City, State", "snippet": "one sentence: core business and scale"}}]}}"""
+{{"companies": [{{"name": "Full company name", "location": "City, Country", "snippet": "one sentence: core business and scale"}}]}}"""
 
     try:
         result = _json(_ask(prompt, max_tokens=8000))
@@ -477,6 +485,7 @@ def discover_companies(categories: List[Dict], inp: Dict, on_progress: Optional[
     log = on_progress if on_progress else print
     results  = {}
     excluded = _excluded_set(inp)
+    geo      = _geo_scope(inp)
 
     for i, cat in enumerate(categories, 1):
         cat_name = cat["name"]
@@ -502,17 +511,17 @@ def discover_companies(categories: List[Dict], inp: Dict, on_progress: Optional[
                     f"- {h.get('title','')} | {h.get('link','')} | {h.get('snippet','')}"
                     for h in hits
                 )
-                parse_prompt = f"""From these search results, extract Indian company names in the {inp['sector']} sector.
+                parse_prompt = f"""From these search results, extract company names operating in {geo}, relevant to the {inp['sector']} sector.
 
 Query: {q}
 Results:
 {snippets}
 
 Return ONLY valid JSON:
-{{"companies": [{{"name": "Full company name", "location": "City, State or null", "snippet": "one sentence on what they do"}}]}}
+{{"companies": [{{"name": "Full company name", "location": "City, Country or null", "snippet": "one sentence on what they do"}}]}}
 
 Rules:
-- Only real Indian companies (incorporated in India or significant India operations)
+- Only real companies with a confirmed presence or operations in {geo}
 - Exclude directories, news articles, associations, analyst reports
 - Maximum 8 companies per result set"""
 
@@ -547,10 +556,11 @@ Rules:
 # ── Company enrichment ────────────────────────────────────────────────────────
 def _enrich_one(company: Dict, category: str, inp: Dict) -> Dict:
     name = company["name"]
+    geo  = _geo_scope(inp)
 
     # Single combined search — saves 2/3 of SerpAPI credits vs separate searches
     combined_hits = _serp(
-        f"{name} India revenue EBITDA credit rating CEO MD annual report FY25", num=10
+        f"{name} {geo} revenue EBITDA credit rating CEO MD annual report", num=10
     )
     snippets = "\n".join(
         f"- {h.get('title','')} | {h.get('snippet','')}"
@@ -565,10 +575,10 @@ def _enrich_one(company: Dict, category: str, inp: Dict) -> Dict:
         else f"Why would {inp['client']} want to acquire {name}?"
     )
 
-    prompt = f"""Extract information about the Indian company "{name}" from these search results.
+    prompt = f"""Extract information about the company "{name}" (operating in {geo}) from these search results.
 
 Category: {category}
-Location hint: {company.get('location', 'India')}
+Location hint: {company.get('location', geo)}
 Mandate context ({('sell-side' if inp['is_sellside'] else 'buy-side')}): {inp['company_desc']}
 Motivations: {', '.join(inp['motivations'])}
 
@@ -621,7 +631,7 @@ CRITICAL: Only include financial figures explicitly stated in the results. Do no
 
     result["name"]     = name
     result["category"] = category
-    result["location"] = company.get("location") or "India"
+    result["location"] = company.get("location") or geo
 
     # Apollo Step 2 — decision maker names (free, no credits)
     result["apollo_people"] = apollo_people(name)
