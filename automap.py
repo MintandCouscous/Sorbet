@@ -639,7 +639,12 @@ CRITICAL: Only include financial figures explicitly stated in the results. Do no
 
     return result
 
-def enrich_all(discovered: Dict[str, List[Dict]], inp: Dict, on_progress: Optional[Callable[[str], None]] = None) -> Dict[str, List[Dict]]:
+def enrich_all(
+    discovered: Dict[str, List[Dict]],
+    inp: Dict,
+    on_progress: Optional[Callable[[str], None]] = None,
+    on_company_done: Optional[Callable[[Dict[str, List[Dict]]], None]] = None,
+) -> Dict[str, List[Dict]]:
     log = on_progress if on_progress else print
     total = sum(len(v) for v in discovered.values())
     done  = 0
@@ -651,6 +656,8 @@ def enrich_all(discovered: Dict[str, List[Dict]], inp: Dict, on_progress: Option
             done += 1
             log(f"  [{done}/{total}] {co['name']}")
             enriched[category].append(_enrich_one(co, category, inp))
+            if on_company_done:
+                on_company_done(enriched)
             time.sleep(0.2)
 
     return enriched

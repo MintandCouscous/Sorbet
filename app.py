@@ -3,6 +3,7 @@
 import io
 import os
 import tempfile
+import time as _time
 from datetime import datetime
 
 import streamlit as st
@@ -520,13 +521,48 @@ with col_out:
             total_disc = sum(len(v) for v in discovered.values())
             add_log(f"  → {total_disc} companies identified")
 
+            date_tag = datetime.today().strftime("%d%b%y")
+            filename = f"Accomplir - {client} - Mapping - {date_tag}.xlsx"
+
+            # Persistent temp file — written after every company so partial results survive crashes
+            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as _tmp:
+                tmp_path = _tmp.name
+
+            _last_save = [0.0]
+
+            def _save_partial(partial_enriched: dict):
+                now = _time.monotonic()
+                # Throttle to at most one save per 3 s to avoid hammering openpyxl
+                if now - _last_save[0] < 3.0:
+                    return
+                _last_save[0] = now
+                try:
+                    with contextlib.redirect_stdout(_Quiet()):
+                        generate_excel(strategy, partial_enriched, inp, tmp_path)
+                    with open(tmp_path, "rb") as f:
+                        data = f.read()
+                    n = sum(len(v) for v in partial_enriched.values())
+                    st.session_state.excel_bytes    = data
+                    st.session_state.excel_filename = filename
+                    download_area.download_button(
+                        label=f"Download Excel  ({n} of {total_disc} companies)",
+                        data=data,
+                        file_name=filename,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_partial",
+                    )
+                except Exception:
+                    pass
+
             add_log(f"\n[3/4] Enriching {total_disc} companies...")
-            enriched = enrich_all(discovered, inp, on_progress=add_log)
+            enriched = enrich_all(
+                discovered, inp,
+                on_progress=add_log,
+                on_company_done=_save_partial,
+            )
             add_log("  → Enrichment complete")
 
             add_log("\n[4/4] Generating Excel...")
-            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-                tmp_path = tmp.name
             with contextlib.redirect_stdout(_Quiet()):
                 generate_excel(strategy, enriched, inp, tmp_path)
 
@@ -534,8 +570,6 @@ with col_out:
                 excel_bytes = f.read()
             os.unlink(tmp_path)
 
-            date_tag = datetime.today().strftime("%d%b%y")
-            filename = f"Accomplir - {client} - Mapping - {date_tag}.xlsx"
             st.session_state.excel_bytes    = excel_bytes
             st.session_state.excel_filename = filename
 
@@ -549,6 +583,7 @@ with col_out:
                 data=excel_bytes,
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_final",
             )
 
         except Exception as e:
