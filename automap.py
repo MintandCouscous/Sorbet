@@ -581,20 +581,23 @@ def discover_companies(
     for i, cat in enumerate(categories, 1):
         cat_name = cat["name"]
         cat_cap  = (per_cat_caps or {}).get(cat_name, inp.get("per_cat_cap", MAX_COMPANIES_PER_CATEGORY))
-        log(f"  [{i}/{len(categories)}] {cat_name}  (target: {cat_cap})")
+        log(f"  [{i}/{len(categories)}] {cat_name}  — target {cat_cap}")
 
         # Claude generates companies for this category
+        log(f"    ↳ Claude: generating list…")
         claude_cos = _companies_for_category(cat, inp, cap=cat_cap)
         seen: dict = {}
         for co in claude_cos:
             key = co["name"].lower().strip()
             seen[key] = co
-
-        line = f"    Claude: {len(seen)} companies"
+        log(f"    ↳ Claude: {len(seen)} companies")
 
         # SerpAPI sweep — finds regional/unlisted players Claude may not know
         if SERP_AVAILABLE:
-            for q in cat.get("search_queries", [])[:SERP_QUERIES_PER_CATEGORY]:
+            queries = cat.get("search_queries", [])[:SERP_QUERIES_PER_CATEGORY]
+            before_search = len(seen)
+            for j, q in enumerate(queries, 1):
+                log(f"    ↳ search [{j}/{len(queries)}]  {q[:55]}…")
                 hits = _serp(q, num=10)
                 if not hits:
                     continue
@@ -627,10 +630,9 @@ Rules:
                     pass
                 time.sleep(0.3)
 
-            added = len(seen) - len(claude_cos)
-            line += f" + {added} from search = {len(seen)} total"
-
-        log(line)
+            added = len(seen) - before_search
+            if added:
+                log(f"    ↳ +{added} via search → {len(seen)} total")
 
         # Hard post-filter — catches anything the prompt-level exclusion missed
         if excluded:
@@ -638,19 +640,21 @@ Rules:
             seen = {k: v for k, v in seen.items() if _normalize_name(v["name"]) not in excluded}
             skipped = before - len(seen)
             if skipped:
-                log(f"    Skipped {skipped} already-mapped compan{'y' if skipped == 1 else 'ies'}")
+                log(f"    ↳ skipped {skipped} already-mapped")
 
         all_cos = list(seen.values())[:cat_cap]
+        log(f"    ↳ ✓ {len(all_cos)} companies in this category")
         results[cat_name] = all_cos
 
     return results
 
 # ── Company enrichment ────────────────────────────────────────────────────────
-def _enrich_one(company: Dict, category: str, inp: Dict) -> Dict:
+def _enrich_one(company: Dict, category: str, inp: Dict, log=None) -> Dict:
+    _log = log or (lambda _: None)
     name = company["name"]
     geo  = _geo_scope(inp)
 
-    # Single combined search — saves 2/3 of SerpAPI credits vs separate searches
+    _log(f"    ↳ web search…")
     combined_hits = _serp(
         f"{name} {geo} revenue EBITDA credit rating CEO MD annual report", num=10
     )
@@ -700,10 +704,11 @@ Return ONLY valid JSON (use null for anything not found — never guess financia
 
 CRITICAL: Only include financial figures explicitly stated in the results. Do not estimate or hallucinate numbers."""
 
+    _log(f"    ↳ financials & rationale…")
     try:
         result = _json(_ask(prompt))
     except Exception as e:
-        print(f"    [enrich error: {name}] {e}")
+        _log(f"    ↳ [enrich error: {e}]")
         result = {}
 
     # Compute EV and multiples
@@ -725,11 +730,13 @@ CRITICAL: Only include financial figures explicitly stated in the results. Do no
     result["category"] = category
     result["location"] = company.get("location") or geo
 
-    # Apollo Step 2 — decision maker names (free, no credits)
+    _log(f"    ↳ decision makers (Apollo)…")
     people = apollo_people(name)
     time.sleep(0.2)
 
     # Email waterfall: Apollo people/match → RocketReach (both cost 1 credit each)
+    if people:
+        _log(f"    ↳ email lookup ({len(people)} contacts)…")
     for person in people:
         email  = apollo_email(person, name)
         source = "Apollo" if email else ""
@@ -744,6 +751,8 @@ CRITICAL: Only include financial figures explicitly stated in the results. Do no
         person["email_source"] = source
         time.sleep(0.3)
 
+    emails_found = sum(1 for p in people if p.get("email"))
+    _log(f"    ↳ ✓ done  —  {len(people)} contacts, {emails_found} emails")
     result["apollo_people"] = people
 
     return result
@@ -764,7 +773,7 @@ def enrich_all(
         for co in companies:
             done += 1
             log(f"  [{done}/{total}] {co['name']}")
-            enriched[category].append(_enrich_one(co, category, inp))
+            enriched[category].append(_enrich_one(co, category, inp, log=log))
             if on_company_done:
                 on_company_done(enriched)
             time.sleep(0.2)

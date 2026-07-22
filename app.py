@@ -251,6 +251,14 @@ st.markdown("""
     margin-top: 10px;
     letter-spacing: 0.01em;
 }
+.hero-why {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: #B8A888;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-top: 10px;
+}
 
 /* ── Section labels ── */
 .sec {
@@ -438,6 +446,9 @@ st.markdown(f"""
     <span class="fleur">✦ ✦ ✦</span>
     <span class="ln"></span>
   </div>
+  <div class="hero-why">
+    Like sorbet between courses — a clean, sharp view of the market before the deal.
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -593,7 +604,7 @@ with col_form:
 # ── Output ────────────────────────────────────────────────────────────────────
 with col_out:
 
-    st.markdown('<div class="sec">Progress</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec">The Scoop</div>', unsafe_allow_html=True)
     log_area      = st.empty()
     download_area = st.empty()
 
@@ -622,6 +633,12 @@ with col_out:
             file_name=st.session_state.excel_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+    # Show discovered companies count if enrichment was interrupted mid-run
+    if "discovered_checkpoint" in st.session_state and not st.session_state.excel_bytes:
+        disc = st.session_state.discovered_checkpoint
+        total_disc = sum(len(v) for v in disc.values())
+        st.info(f"Discovery completed: {total_disc} companies found. Enrichment may have been interrupted — re-run to continue.")
 
     if run_btn:
         errs = _validate()
@@ -671,37 +688,47 @@ with col_out:
 
         try:
             add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            add_log(f"  {'Sell-side' if is_sellside else 'Buy-side'}  /  {client}")
-            add_log(f"  {sector}  /  {sub_sector}  /  {geography}")
-            add_log(f"  Volume: {count_choice}  ({len(per_cat_caps)} categories)")
+            add_log(f"  {'Sell-side' if is_sellside else 'Buy-side'}  ·  {client}")
+            add_log(f"  {sector}  ·  {sub_sector}  ·  {geography}")
+            add_log(f"  {len(per_cat_caps)} categories  ·  ≈{sum(per_cat_caps.values())} companies")
             add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            add_log(f"\n[1/4] Strategy ({len(strategy['categories'])} categories)")
+            # ── Phase 1: Strategy (already done — just display it) ────────────
+            add_log(f"\n[1/4] Mapping strategy  ✓  ({len(strategy['categories'])} categories)")
             for c in strategy["categories"]:
-                add_log(f"     • {c['name']}  →  {per_cat_caps.get(c['name'], default_cap)} cos")
+                add_log(f"     • {c['name']}  →  {per_cat_caps.get(c['name'], default_cap)} companies")
 
-            add_log("\n[2/4] Building company universe...")
+            # ── Phase 2: Discovery ────────────────────────────────────────────
+            add_log(f"\n[2/4] Building universe…")
             discovered = discover_companies(
                 strategy["categories"], inp,
                 on_progress=add_log,
                 per_cat_caps=per_cat_caps,
             )
             total_disc = sum(len(v) for v in discovered.values())
-            add_log(f"  → {total_disc} companies identified")
+            # Save discovered companies as a mid-run checkpoint
+            st.session_state.discovered_checkpoint = discovered
+            add_log(f"\n  ✓ Discovery done  —  {total_disc} companies across {len(discovered)} categories")
 
-            add_log(f"\n[3/4] Enriching {total_disc} companies...")
+            # ── Phase 3: Enrichment ───────────────────────────────────────────
+            add_log(f"\n[3/4] Enriching {total_disc} companies…")
             enriched = enrich_all(
                 discovered, inp,
                 on_progress=add_log,
                 on_company_done=_save_partial,
             )
-            add_log("  → Enrichment complete")
+            total_enr = sum(len(v) for v in enriched.values())
+            add_log(f"\n  ✓ Enrichment done  —  {total_enr} companies")
 
-            add_log("\n[4/4] Generating Excel...")
+            # ── Phase 4: Excel ────────────────────────────────────────────────
+            add_log(f"\n[4/4] Writing Excel…")
             class _Q(io.StringIO):
                 def write(self, s): return super().write(s)
             with contextlib.redirect_stdout(_Q()):
                 generate_excel(strategy, enriched, inp, tmp_path)
+            add_log(f"     ↳ Snapshot sheet  ✓")
+            add_log(f"     ↳ {len(enriched)} mapping sheets  ✓")
+            add_log(f"     ↳ Decision makers sheet  ✓")
 
             with open(tmp_path, "rb") as f:
                 excel_bytes = f.read()
@@ -710,9 +737,8 @@ with col_out:
             st.session_state.excel_bytes    = excel_bytes
             st.session_state.excel_filename = filename
 
-            total = sum(len(v) for v in enriched.values())
             add_log(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            add_log(f"  DONE  /  {total} companies  /  {len(enriched)} categories")
+            add_log(f"  DONE  ·  {total_enr} companies  ·  {len(enriched)} categories")
             add_log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             download_area.download_button(
