@@ -19,12 +19,14 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 # ── Config ────────────────────────────────────────────────────────────────────
-SERP_API_KEY   = os.getenv("SERP_API_KEY", "")
-APOLLO_API_KEY = os.getenv("APOLLO_API_KEY", "")
+SERP_API_KEY        = os.getenv("SERP_API_KEY", "")
+APOLLO_API_KEY      = os.getenv("APOLLO_API_KEY", "")
+ROCKETREACH_API_KEY = os.getenv("ROCKETREACH_API_KEY", "")
 CLAUDE_MODEL   = "claude-sonnet-4-6"
 MAX_COMPANIES_PER_CATEGORY = 60
 SERP_QUERIES_PER_CATEGORY  = 5
 SERP_AVAILABLE = True             # flipped to False on first 429
+RR_AVAILABLE   = True             # flipped to False on credit exhaustion
 
 claude = anthropic.Anthropic()    # reads ANTHROPIC_API_KEY from env
 
@@ -153,12 +155,67 @@ def apollo_people(company_name: str) -> List[Dict]:
                 "title":                p.get("title", ""),
                 "has_email":            "Y" if p.get("has_email") else "N",
                 "has_phone":            "Y" if p.get("has_direct_phone") == "Yes" else "N",
+                "linkedin_url":         p.get("linkedin_url", ""),
             }
             for p in relevant[:5]   # cap at 5 per company
         ]
     except Exception as e:
         print(f"    [Apollo error] {e}")
         return []
+
+# ── RocketReach — email lookup (consumes 1 credit per call) ──────────────────
+def rocketreach_email(name: str, company: str, linkedin_url: str = "") -> str:
+    """Return a verified email for a person via RocketReach, or empty string."""
+    global RR_AVAILABLE
+    if not ROCKETREACH_API_KEY or not RR_AVAILABLE:
+        return ""
+    try:
+        params: Dict = {"current_employer": company}
+        if linkedin_url:
+            params["li_url"] = linkedin_url   # best signal — use when available
+        else:
+            params["name"] = name
+
+        r = requests.get(
+            "https://api.rocketreach.co/api/v2/lookupProfile",
+            headers={"Api-Key": ROCKETREACH_API_KEY},
+            params=params,
+            timeout=20,
+        )
+        if r.status_code in (402, 429):
+            RR_AVAILABLE = False
+            print("    [RocketReach credits exhausted — skipping further email lookups]")
+            return ""
+        r.raise_for_status()
+        data = r.json()
+
+        # Poll up to 3× if the profile is still being assembled
+        for _ in range(3):
+            if data.get("status") == "complete":
+                break
+            time.sleep(3)
+            r = requests.get(
+                "https://api.rocketreach.co/api/v2/lookupProfile",
+                headers={"Api-Key": ROCKETREACH_API_KEY},
+                params=params,
+                timeout=20,
+            )
+            if r.status_code in (402, 429):
+                RR_AVAILABLE = False
+                return ""
+            r.raise_for_status()
+            data = r.json()
+
+        emails = data.get("emails", [])
+        if emails:
+            # Prefer work email; fall back to first available
+            for e in emails:
+                if e.get("type") == "work":
+                    return e.get("email", "")
+            return emails[0].get("email", "")
+    except Exception as e:
+        print(f"    [RocketReach error] {e}")
+    return ""
 
 # ── Claude helpers ────────────────────────────────────────────────────────────
 def _ask(prompt: str, system: str = "", max_tokens: int = 4096) -> str:
@@ -634,8 +691,20 @@ CRITICAL: Only include financial figures explicitly stated in the results. Do no
     result["location"] = company.get("location") or geo
 
     # Apollo Step 2 — decision maker names (free, no credits)
-    result["apollo_people"] = apollo_people(name)
-    time.sleep(0.2)   # gentle rate limiting for Apollo
+    people = apollo_people(name)
+    time.sleep(0.2)
+
+    # RocketReach Step 3 — verified emails (1 credit each; skipped if key absent)
+    if ROCKETREACH_API_KEY and RR_AVAILABLE:
+        for person in people:
+            fn   = person.get("first_name", "")
+            lo   = person.get("last_name_obfuscated", "")
+            full = f"{fn} {lo}".strip()
+            li   = person.get("linkedin_url", "")
+            person["email"] = rocketreach_email(full, name, linkedin_url=li)
+            time.sleep(0.3)
+
+    result["apollo_people"] = people
 
     return result
 
@@ -785,11 +854,11 @@ DM_COLS = [
     ("Last Name\n(partial)", 16, "left"),
     ("Full Name\n(complete manually)", 22, "left"),
     ("Title",           28,  "left"),
+    ("Email\n(RocketReach)", 34, "left"),
     ("Has\nEmail",       9,  "center"),
     ("Has\nPhone",       9,  "center"),
-    ("Email",           30,  "left"),
     ("Phone",           18,  "left"),
-    ("Enrich?\n(Y to pull email/phone)", 14, "center"),
+    ("LinkedIn",        38,  "left"),
     ("Apollo ID",       28,  "left"),
 ]
 
@@ -799,8 +868,8 @@ def _decision_makers_sheet(wb: Workbook, enriched: Dict[str, List[Dict]], date_s
     # Header block
     ws.row_dimensions[1].height = 5
     ws.cell(2, 2, "Accomplir Advisors").font = Font(name="Arial", size=14, bold=True, color=NAVY)
-    ws.cell(3, 2, "Decision Makers — sourced via Apollo (Step 2)").font = Font(name="Arial", size=11, italic=True, color=BLUE)
-    ws.cell(4, 2, "Last name is partially masked by Apollo. Complete 'Full Name' column manually, then mark 'Y' in Enrich column and run contacts.py to pull emails.").font = Font(name="Arial", size=9, italic=True, color=GRAY_TEXT)
+    ws.cell(3, 2, "Decision Makers — Apollo names · RocketReach emails").font = Font(name="Arial", size=11, italic=True, color=BLUE)
+    ws.cell(4, 2, "Last name is partially masked by Apollo. Emails are auto-fetched via RocketReach where available. Complete 'Full Name' column manually for any gaps.").font = Font(name="Arial", size=9, italic=True, color=GRAY_TEXT)
     ws.cell(5, 2, date_str).font = Font(name="Arial", size=10, color=DARK_TEXT)
     ws.row_dimensions[7].height = 5
 
@@ -824,13 +893,13 @@ def _decision_makers_sheet(wb: Workbook, enriched: Dict[str, List[Dict]], date_s
                     category,
                     person.get("first_name", ""),
                     person.get("last_name_obfuscated", ""),
-                    "",   # Full Name — manual
+                    "",   # Full Name — complete manually
                     person.get("title", ""),
+                    person.get("email", ""),          # RocketReach verified email
                     person.get("has_email", ""),
                     person.get("has_phone", ""),
-                    "",   # Email — filled by contacts.py
-                    "",   # Phone — filled by contacts.py
-                    "",   # Enrich? — user marks Y
+                    "",   # Phone — future
+                    person.get("linkedin_url", ""),
                     person.get("apollo_id", ""),
                 ]
                 for ci, (val, (_, __, align)) in enumerate(zip(vals, DM_COLS), 1):
