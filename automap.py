@@ -918,7 +918,6 @@ DM_COLS = [
     ("Email",                36,  "left"),
     ("Email\nSource",        14,  "left"),
     ("LinkedIn",             38,  "left"),
-    ("Apollo ID",            28,  "left"),
 ]
 
 def _decision_makers_sheet(wb: Workbook, enriched: Dict[str, List[Dict]], date_str: str):
@@ -957,7 +956,6 @@ def _decision_makers_sheet(wb: Workbook, enriched: Dict[str, List[Dict]], date_s
                     person.get("email", ""),
                     person.get("email_source", ""),
                     person.get("linkedin_url", ""),
-                    person.get("apollo_id", ""),
                 ]
                 for ci, (val, (_, __, align)) in enumerate(zip(vals, DM_COLS), 1):
                     cell = ws.cell(row, ci, val)
