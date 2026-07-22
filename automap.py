@@ -478,7 +478,9 @@ Target company filters:
   Must-have attributes: {inp['specific_attrs']}
   Buyer/seller seeking: {inp['what_looking_for']}"""
 
-    prompt = f"""Mandate: {side}
+    prompt = f"""You are a senior M&A analyst at Accomplir Advisors, an Indian investment bank. Generate a realistic mapping strategy for this mandate.
+
+Mandate: {side}
 Client: {inp['client']}
 Company description: {inp['company_desc']}
 Sector: {inp['sector']}  |  Sub-sector: {inp['sub_sector']}
@@ -486,9 +488,19 @@ Client geography: {inp['geography']}
 M&A motivations: {', '.join(inp['motivations'])}
 {filters}
 
-Identify 6–8 distinct, non-overlapping categories of {target} in {geo} that match the filters above.
-For each category also provide 6 targeted Google search queries to find regional / unlisted / smaller players — vary by country/region, product sub-type, company size, and industry directories.
-Tailor queries to the target geography specified above ({geo}) — if it spans multiple countries, distribute search queries across all of them rather than defaulting to one.
+THINK LIKE AN INVESTMENT BANKER CLOSING A REAL DEAL.
+
+For each category you propose, ask yourself: "Would these companies ACTUALLY write a cheque for this specific business? Is the strategic rationale real and specific — not generic?" Discard any category that fails this test.
+
+Key realism checks:
+- Match acquirer scale to deal size: a small D2C or niche brand will not attract mega-conglomerates or PSUs as buyers unless there is a very specific, provable reason.
+- Government/PSU acquirers almost never buy consumer D2C brands — skip PSU categories unless the business is infrastructure, commodities, or defence supply.
+- PE/VC buyers care about growth trajectory, unit economics, and fund fit — only include if the client's stage and size match what these funds actually invest in.
+- Strategic buyers need a concrete integration thesis: brand, distribution, IP, customer base, or geography they cannot build themselves.
+- Categories must be mutually exclusive — no overlap between them.
+
+Identify 6–8 distinct, non-overlapping categories of {target} in {geo} that a banker would genuinely approach.
+For each, provide 6 targeted Google search queries to find actual companies — vary by geography within {geo}, product sub-type, company size, and industry directories.
 
 Return ONLY valid JSON:
 {{
@@ -496,8 +508,8 @@ Return ONLY valid JSON:
   "categories": [
     {{
       "name": "Category name (under 8 words)",
-      "description": "What types of companies fall here and why relevant",
-      "rationale": "Why these companies would pursue this M&A — specific to {inp['client']} and the stated motivations (2-3 sentences)",
+      "description": "What types of companies fall here and why they are a realistic buyer/target",
+      "rationale": "Specific M&A logic: what does this acquirer gain from {inp['client']}'s product, brand, customers, or IP — and why would they pay for it vs. build it? (2-3 sentences)",
       "search_queries": ["query 1", "query 2", "query 3", "query 4", "query 5", "query 6"]
     }}
   ]
