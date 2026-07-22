@@ -66,7 +66,8 @@ SORBET_SVG = """<svg viewBox="0 0 300 460" xmlns="http://www.w3.org/2000/svg">
 
 # ── Session state ─────────────────────────────────────────────────────────────
 for k, v in [("step", 1), ("strategy", None), ("log_lines", []),
-             ("excel_bytes", None), ("excel_filename", ""), ("run_triggered", False)]:
+             ("excel_bytes", None), ("excel_filename", ""), ("run_triggered", False),
+             ("_form", {}), ("_per_cat_caps", {})]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -74,21 +75,27 @@ step  = st.session_state.step
 color = STEP_COLORS[min(step - 1, N_STEPS - 1)]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+def _save_form(**kwargs):
+    """Persist form values to non-widget state so they survive step transitions."""
+    st.session_state["_form"].update(kwargs)
+
 def _build_inp():
+    """Read from persistent _form dict — never from widget state (which gets cleared)."""
+    f = st.session_state["_form"]
     return {
-        "is_sellside":       st.session_state.get("s1_mandate", "Sell-side") == "Sell-side",
-        "client":            st.session_state.get("s1_client", ""),
-        "company_desc":      st.session_state.get("s1_desc", ""),
-        "sector":            st.session_state.get("s2_sector", ""),
-        "sub_sector":        st.session_state.get("s2_sub", ""),
-        "geography":         st.session_state.get("s2_geo", ""),
-        "target_geography":  st.session_state.get("s2_tgeo", "") or "Pan-India",
-        "motivations":       list(st.session_state.get("s3_motivations") or []),
-        "company_types":     list(st.session_state.get("s3_types") or COMPANY_TYPES),
-        "revenue_range":     st.session_state.get("s3_revenue", "") or "No filter",
-        "specific_attrs":    st.session_state.get("s3_attrs", "") or "None",
-        "what_looking_for":  st.session_state.get("s3_seeking", "") or "None",
-        "exclude_companies": st.session_state.get("s4_exclude", ""),
+        "is_sellside":       f.get("mandate", "Sell-side") == "Sell-side",
+        "client":            f.get("client", ""),
+        "company_desc":      f.get("desc", ""),
+        "sector":            f.get("sector", ""),
+        "sub_sector":        f.get("sub", ""),
+        "geography":         f.get("geo", ""),
+        "target_geography":  f.get("tgeo", "") or "Pan-India",
+        "motivations":       list(f.get("motivations") or []),
+        "company_types":     list(f.get("types") or COMPANY_TYPES),
+        "revenue_range":     f.get("revenue", "") or "No filter",
+        "specific_attrs":    f.get("attrs", "") or "None",
+        "what_looking_for":  f.get("seeking", "") or "None",
+        "exclude_companies": f.get("exclude", ""),
         "per_cat_cap":       DEFAULT_CAP,
         "date":              datetime.today().strftime("%d-%b-%y"),
     }
@@ -310,13 +317,16 @@ if step == 1:
         st.markdown(f'<div class="step-label">Step 1 of {N_STEPS}</div>', unsafe_allow_html=True)
         st.markdown('<div class="step-title">The <em>Deal</em></div>', unsafe_allow_html=True)
         st.markdown('<div class="step-hint">Tell us about the mandate and who you\'re representing.</div>', unsafe_allow_html=True)
-        st.radio("Mandate type", ["Sell-side", "Buy-side"], horizontal=True, key="s1_mandate")
-        st.text_input("Client company", placeholder="e.g. Cessna Lifeline Ltd.", key="s1_client")
+        _f1 = st.session_state["_form"]
+        _mandate_opts = ["Sell-side", "Buy-side"]
+        _mandate_idx  = _mandate_opts.index(_f1["mandate"]) if _f1.get("mandate") in _mandate_opts else 0
+        st.radio("Mandate type", _mandate_opts, horizontal=True, key="s1_mandate", index=_mandate_idx)
+        st.text_input("Client company", placeholder="e.g. Cessna Lifeline Ltd.", key="s1_client", value=_f1.get("client",""))
         is_sell = st.session_state.get("s1_mandate", "Sell-side") == "Sell-side"
         st.text_area(
             f"Describe the {'company being sold' if is_sell else 'acquirer'}",
             placeholder="Products & services, revenue size, key markets, deal rationale — paste any doc",
-            height=130, key="s1_desc",
+            height=130, key="s1_desc", value=_f1.get("desc",""),
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -326,11 +336,14 @@ if step == 1:
     _, _, next_col = st.columns([1, 3, 1])
     if next_col.button("Continue →", key="n1", type="primary"):
         errs = []
-        if not st.session_state.get("s1_client", "").strip(): errs.append("Enter the client company name.")
-        if not st.session_state.get("s1_desc", "").strip():   errs.append("Describe the company.")
+        _client = st.session_state.get("s1_client", "").strip()
+        _desc   = st.session_state.get("s1_desc", "").strip()
+        if not _client: errs.append("Enter the client company name.")
+        if not _desc:   errs.append("Describe the company.")
         if errs:
             for e in errs: st.error(e)
         else:
+            _save_form(mandate=st.session_state.get("s1_mandate","Sell-side"), client=_client, desc=_desc)
             st.session_state.strategy = None
             st.session_state.step = 2; st.rerun()
 
@@ -343,10 +356,11 @@ elif step == 2:
         st.markdown(f'<div class="step-label">Step 2 of {N_STEPS}</div>', unsafe_allow_html=True)
         st.markdown('<div class="step-title">The <em>Market</em></div>', unsafe_allow_html=True)
         st.markdown('<div class="step-hint">Define the sector and where to look.</div>', unsafe_allow_html=True)
-        st.text_input("Sector",      placeholder="e.g. Healthcare Services",  key="s2_sector")
-        st.text_input("Sub-sector",  placeholder="e.g. Veterinary Care",      key="s2_sub")
-        st.text_input("Client HQ",   placeholder="e.g. Bengaluru, Karnataka", key="s2_geo")
-        st.text_input("Target geography", placeholder="Pan-India  /  South-East Asia", key="s2_tgeo")
+        _f2 = st.session_state["_form"]
+        st.text_input("Sector",      placeholder="e.g. Healthcare Services",  key="s2_sector", value=_f2.get("sector",""))
+        st.text_input("Sub-sector",  placeholder="e.g. Veterinary Care",      key="s2_sub",    value=_f2.get("sub",""))
+        st.text_input("Client HQ",   placeholder="e.g. Bengaluru, Karnataka", key="s2_geo",    value=_f2.get("geo",""))
+        st.text_input("Target geography", placeholder="Pan-India  /  South-East Asia", key="s2_tgeo", value=_f2.get("tgeo",""))
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_art:
@@ -357,12 +371,16 @@ elif step == 2:
         st.session_state.step = 1; st.rerun()
     if next_col.button("Continue →", key="n2", type="primary"):
         errs = []
-        if not st.session_state.get("s2_sector","").strip():  errs.append("Sector is required.")
-        if not st.session_state.get("s2_sub","").strip():     errs.append("Sub-sector is required.")
-        if not st.session_state.get("s2_geo","").strip():     errs.append("Client HQ is required.")
+        _sector = st.session_state.get("s2_sector","").strip()
+        _sub    = st.session_state.get("s2_sub","").strip()
+        _geo    = st.session_state.get("s2_geo","").strip()
+        if not _sector: errs.append("Sector is required.")
+        if not _sub:    errs.append("Sub-sector is required.")
+        if not _geo:    errs.append("Client HQ is required.")
         if errs:
             for e in errs: st.error(e)
         else:
+            _save_form(sector=_sector, sub=_sub, geo=_geo, tgeo=st.session_state.get("s2_tgeo",""))
             st.session_state.strategy = None
             st.session_state.step = 3; st.rerun()
 
@@ -376,26 +394,27 @@ elif step == 3:
         st.markdown('<div class="step-title"><em>Motivations</em> & Filters</div>', unsafe_allow_html=True)
         st.markdown('<div class="step-hint">Why is this deal happening? What must the target have?</div>', unsafe_allow_html=True)
 
+        _f3 = st.session_state["_form"]
         try:
             st.pills("M&A Motivations — pick all that apply", MOTIVATIONS,
-                     selection_mode="multi", key="s3_motivations")
+                     default=_f3.get("motivations",[]), selection_mode="multi", key="s3_motivations")
         except AttributeError:
             motiv = []
             for i, m in enumerate(MOTIVATIONS):
-                if st.checkbox(m, key=f"s3_m_{i}"): motiv.append(m)
+                if st.checkbox(m, value=(m in _f3.get("motivations",[])), key=f"s3_m_{i}"): motiv.append(m)
             st.session_state["s3_motivations"] = motiv
 
-        st.text_input("Revenue range",    placeholder=">100 Cr  /  50–500 Cr",     key="s3_revenue")
-        st.text_input("Must-have attributes", placeholder="PLI recipient / CRISIL rated", key="s3_attrs")
-        st.text_input("What are you seeking?", placeholder="East India presence / R&D capabilities", key="s3_seeking")
+        st.text_input("Revenue range",    placeholder=">100 Cr  /  50–500 Cr",     key="s3_revenue", value=_f3.get("revenue",""))
+        st.text_input("Must-have attributes", placeholder="PLI recipient / CRISIL rated", key="s3_attrs", value=_f3.get("attrs",""))
+        st.text_input("What are you seeking?", placeholder="East India presence / R&D capabilities", key="s3_seeking", value=_f3.get("seeking",""))
 
         try:
             st.pills("Company types to include", COMPANY_TYPES,
-                     default=COMPANY_TYPES, selection_mode="multi", key="s3_types")
+                     default=_f3.get("types", COMPANY_TYPES), selection_mode="multi", key="s3_types")
         except AttributeError:
             types = []
             for i, t in enumerate(COMPANY_TYPES):
-                if st.checkbox(t, value=True, key=f"s3_t_{i}"): types.append(t)
+                if st.checkbox(t, value=(t in _f3.get("types", COMPANY_TYPES)), key=f"s3_t_{i}"): types.append(t)
             st.session_state["s3_types"] = types
 
         st.markdown('</div>', unsafe_allow_html=True)
@@ -415,7 +434,14 @@ elif step == 3:
         if errs:
             for e in errs: st.error(e)
         else:
-            st.session_state.strategy = None  # regenerate if they come back and change
+            _save_form(
+                motivations=motivations,
+                types=types,
+                revenue=st.session_state.get("s3_revenue",""),
+                attrs=st.session_state.get("s3_attrs",""),
+                seeking=st.session_state.get("s3_seeking",""),
+            )
+            st.session_state.strategy = None
             st.session_state.step = 4; st.rerun()
 
 # ── Step 4 — Volume & Categories ─────────────────────────────────────────────
@@ -454,8 +480,7 @@ elif step == 4:
                                 value=DEFAULT_CAP, step=1, key=f"cat_{i}")
                 rationale_text = cat.get("rationale") or cat.get("description") or ""
                 if rationale_text:
-                    with st.expander("Why this category?", expanded=False):
-                        st.caption(rationale_text)
+                    st.caption(rationale_text)
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.text_area("Already mapped — skip these companies",
@@ -466,6 +491,11 @@ elif step == 4:
         st.session_state.strategy = None
         st.session_state.step = 3; st.rerun()
     if run_col.button("Run Mapping →", key="run_btn", type="primary"):
+        st.session_state["_per_cat_caps"] = {
+            cat["name"]: st.session_state.get(f"cat_{i}", DEFAULT_CAP)
+            for i, cat in enumerate(cats)
+        }
+        _save_form(exclude=st.session_state.get("s4_exclude",""))
         st.session_state.run_triggered = True
         st.session_state.step = 5
         st.rerun()
@@ -481,14 +511,15 @@ elif step == 5:
 
     with col_info:
         st.markdown(f'<div class="art-wrap" style="animation:floatArt 5s ease-in-out infinite">{SORBET_SVG}</div>', unsafe_allow_html=True)
-        client = st.session_state.get("s1_client", "—")
-        sector = st.session_state.get("s2_sector", "")
+        _f5 = st.session_state["_form"]
+        client = _f5.get("client", "—")
+        sector = _f5.get("sector", "")
         st.markdown(f"""
         <div style="margin-top:18px;background:#fff;border:1px solid #FFE4EC;border-radius:14px;padding:18px 20px;">
           <div style="font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:{color};margin-bottom:10px;">Mandate Summary</div>
           <div style="font-size:14px;font-weight:600;color:#1C1412;margin-bottom:4px;">{client}</div>
-          <div style="font-size:12px;color:#9B7080;">{sector} · {st.session_state.get('s2_sub','')}</div>
-          <div style="font-size:12px;color:#9B7080;margin-top:4px;">{st.session_state.get('s2_geo','')} → {st.session_state.get('s2_tgeo','Pan-India')}</div>
+          <div style="font-size:12px;color:#9B7080;">{sector} · {_f5.get('sub','')}</div>
+          <div style="font-size:12px;color:#9B7080;margin-top:4px;">{_f5.get('geo','')} → {_f5.get('tgeo','Pan-India')}</div>
         </div>""", unsafe_allow_html=True)
         download_area = st.empty()
 
@@ -523,9 +554,8 @@ elif step == 5:
             strategy = st.session_state.strategy
             cats     = strategy.get("categories", [])
 
-            per_cat_caps = {
-                cat["name"]: st.session_state.get(f"cat_{i}", DEFAULT_CAP)
-                for i, cat in enumerate(cats)
+            per_cat_caps = st.session_state.get("_per_cat_caps") or {
+                cat["name"]: DEFAULT_CAP for cat in cats
             }
 
             inp      = _build_inp()
