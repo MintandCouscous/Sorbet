@@ -228,12 +228,11 @@ div[data-testid="stPillsGroup"]>label {{
 .cat-icon {{ font-size:20px; margin-right:6px; }}
 
 /* ─ Expander ─ */
-details summary {{
-  color:color-mix(in srgb,var(--clr) 80%,#000) !important;
+[data-testid="stExpander"] summary {{
+  color:color-mix(in srgb,var(--clr) 75%,#555) !important;
   font-size:11.5px !important; font-weight:600 !important;
-  letter-spacing:.04em !important; text-transform:uppercase !important;
 }}
-details[open] summary {{ color:var(--clr) !important; }}
+[data-testid="stExpander"] details[open] summary {{ color:var(--clr) !important; }}
 
 /* ─ Primary button ─ */
 div[data-testid="stButton"]>button[kind="primary"] {{
@@ -332,6 +331,7 @@ if step == 1:
         if errs:
             for e in errs: st.error(e)
         else:
+            st.session_state.strategy = None
             st.session_state.step = 2; st.rerun()
 
 # ── Step 2 — The Market ───────────────────────────────────────────────────────
@@ -363,6 +363,7 @@ elif step == 2:
         if errs:
             for e in errs: st.error(e)
         else:
+            st.session_state.strategy = None
             st.session_state.step = 3; st.rerun()
 
 # ── Step 3 — Motivations & Filters ───────────────────────────────────────────
@@ -439,6 +440,10 @@ elif step == 4:
     strategy = st.session_state.strategy
     cats     = strategy.get("categories", [])
 
+    regen_col, _ = st.columns([1, 5])
+    if regen_col.button("↺ Regenerate", key="regen", type="secondary"):
+        st.session_state.strategy = None; st.rerun()
+
     # Category cards — 2-column grid at top level (safe, no parent column)
     cat_cols = st.columns(2, gap="medium")
     for i, cat in enumerate(cats):
@@ -447,9 +452,10 @@ elif step == 4:
                 st.markdown(f'<div class="cat-name">{STEP_ICONS[2]} {cat["name"]}</div>', unsafe_allow_html=True)
                 st.number_input("Companies to find", min_value=1, max_value=250,
                                 value=DEFAULT_CAP, step=1, key=f"cat_{i}")
-                if cat.get("description"):
-                    with st.expander("Rationale ↓", expanded=False):
-                        st.caption(cat["description"])
+                rationale_text = cat.get("rationale") or cat.get("description") or ""
+                if rationale_text:
+                    with st.expander("Why this category?", expanded=False):
+                        st.caption(rationale_text)
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.text_area("Already mapped — skip these companies",
@@ -457,6 +463,7 @@ elif step == 4:
 
     back_col, _, run_col = st.columns([1, 3, 1])
     if back_col.button("← Back", key="b4", type="secondary"):
+        st.session_state.strategy = None
         st.session_state.step = 3; st.rerun()
     if run_col.button("Run Mapping →", key="run_btn", type="primary"):
         st.session_state.run_triggered = True
