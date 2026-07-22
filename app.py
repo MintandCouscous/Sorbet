@@ -1,5 +1,6 @@
 """Automap — Streamlit UI for Accomplir Advisors M&A Mapping Tool"""
 
+import contextlib
 import io
 import os
 import tempfile
@@ -17,338 +18,426 @@ from automap import (
 )
 
 st.set_page_config(
-    page_title="Automap · Accomplir",
+    page_title="Sorbet · Accomplir",
     page_icon="🍧",
     layout="wide",
 )
 
-# ── Original pink melting-sorbet illustration (SVG) ─────────────────────────────
-SORBET_SVG = """
-<svg viewBox="0 0 480 380" xmlns="http://www.w3.org/2000/svg">
-  <ellipse cx="240" cy="350" rx="120" ry="16" fill="#FFD9E6"/>
-
-  <path d="M150 188 Q160 250 180 320 Q200 345 240 345 Q280 345 300 320 Q320 250 330 188 Z" fill="#FF8FAE"/>
-  <path d="M170 230 Q165 270 178 300 Q183 290 182 250 Z" fill="#FF6F96" opacity="0.7"/>
-  <path d="M300 235 Q308 268 296 298 Q291 286 293 248 Z" fill="#FF6F96" opacity="0.7"/>
-
-  <path d="M210 300 Q205 325 213 340 Q221 330 218 302 Z" fill="#FF5C8A"/>
-  <path d="M255 305 Q252 328 261 338 Q268 326 264 306 Z" fill="#FF5C8A"/>
-  <path d="M236 312 Q231 332 238 344 Q246 333 242 313 Z" fill="#FF7AA0"/>
-
-  <circle cx="240" cy="178" r="86" fill="#FF5C8A"/>
-  <circle cx="240" cy="178" r="86" fill="url(#g1)" opacity="0.35"/>
-
-  <circle cx="240" cy="96" r="72" fill="#FF85A8"/>
-  <circle cx="240" cy="96" r="72" fill="url(#g1)" opacity="0.3"/>
-
-  <circle cx="240" cy="34" r="50" fill="#FFB3C6"/>
-
-  <ellipse cx="206" cy="20" rx="16" ry="22" fill="#FFE0EA" opacity="0.85"/>
-  <ellipse cx="208" cy="98" rx="20" ry="28" fill="#FFC2D6" opacity="0.55"/>
-  <ellipse cx="206" cy="170" rx="24" ry="34" fill="#FF85A8" opacity="0.45"/>
-
-  <path d="M240 -10 Q224 4 222 18 Q224 30 240 32 Q256 30 258 18 Q256 4 240 -10 Z" fill="#7FB88D"/>
-  <path d="M240 -8 L240 22" stroke="#5C9468" stroke-width="2" fill="none"/>
-
+# ── French ice cream cart SVG ─────────────────────────────────────────────────
+CART_SVG = """
+<svg viewBox="0 0 400 290" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <radialGradient id="g1" cx="35%" cy="30%" r="70%">
-      <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    <radialGradient id="sg" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sg2" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
     </radialGradient>
   </defs>
+
+  <!-- Shadow -->
+  <ellipse cx="200" cy="284" rx="148" ry="8" fill="#C9B48A" opacity="0.35"/>
+
+  <!-- ── Wheels ── -->
+  <!-- Left wheel outer ring -->
+  <circle cx="82" cy="238" r="44" fill="#5C3A18" stroke="#C49A35" stroke-width="3"/>
+  <circle cx="82" cy="238" r="30" fill="#7A5220" stroke="#C49A35" stroke-width="1.5"/>
+  <!-- Left spokes -->
+  <g stroke="#C49A35" stroke-width="1.8" opacity="0.9">
+    <line x1="82" y1="194" x2="82" y2="282"/>
+    <line x1="38" y1="238" x2="126" y2="238"/>
+    <line x1="51" y1="207" x2="113" y2="269"/>
+    <line x1="51" y1="269" x2="113" y2="207"/>
+  </g>
+  <circle cx="82" cy="238" r="7" fill="#C49A35"/>
+
+  <!-- Right wheel outer ring -->
+  <circle cx="318" cy="238" r="44" fill="#5C3A18" stroke="#C49A35" stroke-width="3"/>
+  <circle cx="318" cy="238" r="30" fill="#7A5220" stroke="#C49A35" stroke-width="1.5"/>
+  <!-- Right spokes -->
+  <g stroke="#C49A35" stroke-width="1.8" opacity="0.9">
+    <line x1="318" y1="194" x2="318" y2="282"/>
+    <line x1="274" y1="238" x2="362" y2="238"/>
+    <line x1="287" y1="207" x2="349" y2="269"/>
+    <line x1="287" y1="269" x2="349" y2="207"/>
+  </g>
+  <circle cx="318" cy="238" r="7" fill="#C49A35"/>
+
+  <!-- Axle -->
+  <line x1="82" y1="238" x2="318" y2="238" stroke="#C49A35" stroke-width="2.5" opacity="0.3"/>
+
+  <!-- ── Cart body ── -->
+  <rect x="52" y="155" width="280" height="78" rx="5" fill="#7A5220"/>
+  <!-- Plank lines -->
+  <line x1="52" y1="175" x2="332" y2="175" stroke="#5C3A18" stroke-width="1.2" opacity="0.45"/>
+  <line x1="52" y1="195" x2="332" y2="195" stroke="#5C3A18" stroke-width="1.2" opacity="0.45"/>
+  <line x1="52" y1="215" x2="332" y2="215" stroke="#5C3A18" stroke-width="1.2" opacity="0.45"/>
+  <!-- Cart border -->
+  <rect x="50" y="153" width="284" height="82" rx="6" fill="none" stroke="#C49A35" stroke-width="2.5"/>
+
+  <!-- "Glaces" script on cart -->
+  <text x="192" y="201" text-anchor="middle" font-family="Fraunces, Georgia, serif"
+        font-size="19" font-style="italic" fill="#C49A35" opacity="0.88">Glaces</text>
+
+  <!-- ── Counter surface ── -->
+  <rect x="42" y="143" width="300" height="16" rx="3" fill="#C49A35"/>
+  <rect x="42" y="143" width="300" height="6" rx="3" fill="#E8BF60" opacity="0.55"/>
+
+  <!-- ── Ice cream tubs + scoops ── -->
+  <!-- Strawberry -->
+  <ellipse cx="102" cy="137" rx="22" ry="9" fill="#F2A8B0"/>
+  <rect x="80" y="127" width="44" height="16" fill="#F2A8B0"/>
+  <ellipse cx="102" cy="127" rx="22" ry="9" fill="#FFD0D8"/>
+  <circle cx="102" cy="115" r="17" fill="#FF8FAE"/>
+  <circle cx="102" cy="115" r="17" fill="url(#sg)"/>
+
+  <!-- Pistachio -->
+  <ellipse cx="162" cy="137" rx="22" ry="9" fill="#7EC8A0"/>
+  <rect x="140" y="127" width="44" height="16" fill="#7EC8A0"/>
+  <ellipse cx="162" cy="127" rx="22" ry="9" fill="#AADCBC"/>
+  <circle cx="162" cy="115" r="17" fill="#5BBB88"/>
+  <circle cx="162" cy="115" r="17" fill="url(#sg)"/>
+
+  <!-- Vanilla -->
+  <ellipse cx="222" cy="137" rx="22" ry="9" fill="#E8C87A"/>
+  <rect x="200" y="127" width="44" height="16" fill="#E8C87A"/>
+  <ellipse cx="222" cy="127" rx="22" ry="9" fill="#F5DFA0"/>
+  <circle cx="222" cy="115" r="17" fill="#F0CC58"/>
+  <circle cx="222" cy="115" r="17" fill="url(#sg)"/>
+
+  <!-- Chocolate -->
+  <ellipse cx="282" cy="137" rx="22" ry="9" fill="#8B5E3C"/>
+  <rect x="260" y="127" width="44" height="16" fill="#8B5E3C"/>
+  <ellipse cx="282" cy="127" rx="22" ry="9" fill="#A87450"/>
+  <circle cx="282" cy="115" r="17" fill="#6B4220"/>
+  <circle cx="282" cy="115" r="17" fill="url(#sg2)"/>
+
+  <!-- ── Awning poles ── -->
+  <rect x="58" y="70" width="7" height="77" fill="#1A2B5E"/>
+  <rect x="335" y="70" width="7" height="77" fill="#1A2B5E"/>
+
+  <!-- ── Awning body — navy + cream stripes ── -->
+  <rect x="22" y="22" width="356" height="52" fill="#1A2B5E"/>
+  <!-- Cream stripes (every ~33px, 15px wide) -->
+  <rect x="30"  y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="63"  y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="96"  y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="129" y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="162" y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="195" y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="228" y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="261" y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="294" y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="327" y="22" width="15" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <rect x="360" y="22" width="18" height="52" fill="#F9F3E3" opacity="0.88"/>
+  <!-- Top gold trim -->
+  <rect x="22" y="20" width="356" height="4" fill="#C49A35"/>
+
+  <!-- ── Scalloped fringe ── -->
+  <path d="M22,74 Q28,88 34,74 Q40,88 46,74 Q52,88 58,74 Q64,88 70,74 Q76,88 82,74 Q88,88 94,74 Q100,88 106,74 Q112,88 118,74 Q124,88 130,74 Q136,88 142,74 Q148,88 154,74 Q160,88 166,74 Q172,88 178,74 Q184,88 190,74 Q196,88 202,74 Q208,88 214,74 Q220,88 226,74 Q232,88 238,74 Q244,88 250,74 Q256,88 262,74 Q268,88 274,74 Q280,88 286,74 Q292,88 298,74 Q304,88 310,74 Q316,88 322,74 Q328,88 334,74 Q340,88 346,74 Q352,88 358,74 Q364,88 370,74 Q376,88 378,74" fill="none" stroke="#C49A35" stroke-width="1.5"/>
+  <path d="M22,74 Q28,88 34,74 Q40,88 46,74 Q52,88 58,74 Q64,88 70,74 Q76,88 82,74 Q88,88 94,74 Q100,88 106,74 Q112,88 118,74 Q124,88 130,74 Q136,88 142,74 Q148,88 154,74 Q160,88 166,74 Q172,88 178,74 Q184,88 190,74 Q196,88 202,74 Q208,88 214,74 Q220,88 226,74 Q232,88 238,74 Q244,88 250,74 Q256,88 262,74 Q268,88 274,74 Q280,88 286,74 Q292,88 298,74 Q304,88 310,74 Q316,88 322,74 Q328,88 334,74 Q340,88 346,74 Q352,88 358,74 Q364,88 370,74 Q376,88 378,74 L378,76 L22,76 Z" fill="#1A2B5E"/>
+
+  <!-- ── Handle ── -->
+  <path d="M338 155 Q368 155 372 138 Q376 120 360 116" stroke="#C49A35" stroke-width="4" fill="none" stroke-linecap="round"/>
+
+  <!-- ── Sparkles ── -->
+  <text x="346" y="106" font-size="10" fill="#C49A35" class="sp1">✦</text>
+  <text x="60"  y="108" font-size="8"  fill="#FF8FAE" class="sp2">✦</text>
+  <text x="195" y="100" font-size="7"  fill="#E8BF60" class="sp3">✦</text>
 </svg>
 """
 
-# ── Log line colorizer ─────────────────────────────────────────────────────────
+# ── Log colorizer ─────────────────────────────────────────────────────────────
 def _colorize(line: str) -> str:
     s = line.rstrip()
     if not s.strip():
         return "<br>"
     esc = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     if "━" in s or "═" in s:
-        return f'<span style="color:#5c4452;">{esc}</span>'
+        return f'<span style="color:#C49A35;opacity:0.7;">{esc}</span>'
     if s.lstrip().startswith("[") and "/4]" in s:
-        return f'<span style="color:#FF85A8;font-weight:700;">{esc}</span>'
+        return f'<span style="color:#E8BF60;font-weight:700;">{esc}</span>'
     if "[ERROR]" in s:
-        return f'<span style="color:#FFB3C6;text-decoration:underline;">{esc}</span>'
+        return f'<span style="color:#E07B70;text-decoration:underline;">{esc}</span>'
     if "→" in s or "DONE" in s or "✓" in s:
         return f'<span style="color:#fff;">{esc}</span>'
     if s.startswith("     •"):
-        return f'<span style="color:#9b7d8a;">{esc}</span>'
-    return f'<span style="color:#cbb6c0;">{esc}</span>'
+        return f'<span style="color:#8B9BB8;">{esc}</span>'
+    return f'<span style="color:#A8B4CC;">{esc}</span>'
 
-# ── CSS injection ─────────────────────────────────────────────────────────────
-st.markdown(f"""
+# ── CSS ───────────────────────────────────────────────────────────────────────
+st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:ital,opsz,wght@0,12..96,400..800;1,12..96,400..800&family=Fraunces:ital,opsz,wght@1,9..144,500..700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,500..700&family=Playfair+Display:ital,wght@0,600;1,500&family=Inter:wght@300;400;500;600&display=swap');
 
-*, html, body, [class*="css"] {{
+*, html, body, [class*="css"] {
     font-family: 'Inter', sans-serif !important;
-}}
+}
 
-.stApp {{
-    background: #FFFCF6 !important;
-}}
+.stApp {
+    background: #F9F3E3 !important;
+    background-image: radial-gradient(circle, rgba(196,154,53,0.12) 1px, transparent 1px) !important;
+    background-size: 26px 26px !important;
+}
 
-.block-container {{
+.block-container {
     padding: 0 2.5rem 2rem !important;
     max-width: 100% !important;
-    position: relative;
-    z-index: 1;
-}}
+}
 
 /* ── Hero ── */
-.hero {{
+.hero {
     text-align: center;
-    padding: 36px 0 8px;
-}}
-.hero-illus {{
-    width: 220px;
-    max-width: 60vw;
-    margin: 0 auto;
-    filter: drop-shadow(0 10px 16px rgba(0,0,0,0.08));
-}}
-.hero-title-wrap {{
-    position: relative;
+    padding: 28px 0 4px;
+}
+.cart-wrap {
     display: inline-block;
-}}
-.hero-title {{
+    animation: float 5s ease-in-out infinite;
+}
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-11px); }
+}
+.sp1 { animation: sparkle 3s ease-in-out infinite; }
+.sp2 { animation: sparkle 3s ease-in-out infinite 1s; }
+.sp3 { animation: sparkle 3s ease-in-out infinite 2s; }
+@keyframes sparkle {
+    0%, 100% { opacity: 0.2; transform: scale(0.7); }
+    50%       { opacity: 1;   transform: scale(1.2); }
+}
+.hero-illus {
+    width: 200px;
+    max-width: 55vw;
+    margin: 0 auto;
+    filter: drop-shadow(0 12px 20px rgba(92,58,24,0.18));
+}
+.hero-title {
     font-family: 'Fraunces', serif;
     font-optical-sizing: auto;
     font-variation-settings: "opsz" 144, "SOFT" 60, "WONK" 1;
     font-style: italic;
-    font-size: 120px;
+    font-size: 116px;
     font-weight: 600;
     letter-spacing: -0.01em;
     line-height: 0.95;
-    color: #5E2A50;
-    margin-top: 4px;
-    transform: skewX(-5deg);
+    color: #1A2B5E;
+    margin-top: 6px;
     display: inline-block;
-}}
-.title-drip {{
-    position: absolute;
-    right: 2%;
-    bottom: -34px;
-    width: 30px;
-    pointer-events: none;
-}}
-.title-rule {{
+}
+.hero-rule {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 14px;
-    margin-top: 24px;
-}}
-.title-rule .ln {{
-    width: 60px;
+    gap: 12px;
+    margin-top: 18px;
+}
+.hero-rule .ln {
+    width: 56px;
     height: 1px;
-    background: #C9A98E;
-}}
-.title-rule .dot {{
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: #C9A98E;
-}}
-.hero-tag {{
-    font-family: 'Fraunces', serif;
+    background: #C49A35;
+}
+.hero-rule .fleur {
+    font-size: 13px;
+    color: #C49A35;
+    letter-spacing: 6px;
+}
+.hero-tag {
+    font-family: 'Playfair Display', serif;
     font-style: italic;
-    font-size: 15px;
-    font-weight: 500;
-    color: #8a6f78;
-    margin-top: 14px;
+    font-size: 14px;
+    color: #6B5A3A;
+    margin-top: 10px;
     letter-spacing: 0.01em;
-}}
-.hero-sub {{
-    font-size: 11px;
-    color: #B89A85;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    margin-top: 6px;
-}}
-
-/* ── Scroll-fixed ice-cream drips ── */
-.drip {{
-    position: fixed;
-    z-index: 0;
-    pointer-events: none;
-}}
+}
 
 /* ── Section labels ── */
-.sec {{
-    font-family: 'Bricolage Grotesque', sans-serif;
+.sec {
+    font-family: 'Playfair Display', serif;
     font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    color: #2A2A2A;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: #1A2B5E;
     text-transform: uppercase;
-    border-bottom: 2px solid #EDEDED;
-    padding-bottom: 8px;
-    margin: 30px 0 16px;
-}}
+    border-bottom: 1.5px solid #C49A35;
+    padding-bottom: 7px;
+    margin: 28px 0 14px;
+}
 
 /* ── Inputs ── */
 .stTextInput > div > div > input,
-.stTextArea > div > div > textarea {{
-    background: #FAFAFA !important;
-    border: 1.5px solid #E5E5E5 !important;
-    border-radius: 14px !important;
-    color: #2A2A2A !important;
+.stTextArea > div > div > textarea {
+    background: #FFFDF7 !important;
+    border: 1.5px solid #D8C8A8 !important;
+    border-radius: 10px !important;
+    color: #1C1412 !important;
     font-family: 'Inter', sans-serif !important;
     font-size: 13.5px !important;
     padding: 10px 14px !important;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
-}}
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+}
 .stTextInput > div > div > input:focus,
-.stTextArea > div > div > textarea:focus {{
-    border-color: #FF8FAE !important;
-    box-shadow: 0 0 0 4px rgba(255,143,174,0.1) !important;
+.stTextArea > div > div > textarea:focus {
+    border-color: #C49A35 !important;
+    box-shadow: 0 0 0 3px rgba(196,154,53,0.15) !important;
     outline: none !important;
-}}
+}
 .stTextInput > div > div > input::placeholder,
-.stTextArea > div > div > textarea::placeholder {{
-    color: #b5b5b5 !important;
-}}
+.stTextArea > div > div > textarea::placeholder {
+    color: #B8A888 !important;
+}
 
 /* ── Labels ── */
-.stTextInput label, .stTextArea label {{
-    color: #6b6b6b !important;
+.stTextInput label, .stTextArea label {
+    color: #6B5A3A !important;
     font-size: 11.5px !important;
     font-weight: 600 !important;
-    letter-spacing: 0.03em !important;
-}}
+    letter-spacing: 0.04em !important;
+}
 
-/* ── Radio ── */
-div[data-testid="stRadioGroup"] > div > label {{
-    color: #2A2A2A !important;
+/* ── Radio / checkbox ── */
+div[data-testid="stRadioGroup"] > div > label {
+    color: #1C1412 !important;
     font-size: 13.5px !important;
     font-weight: 500 !important;
-}}
-
-/* ── Checkbox ── */
-.stCheckbox label span {{
-    color: #2A2A2A !important;
+}
+.stCheckbox label span {
+    color: #1C1412 !important;
     font-size: 12.5px !important;
-}}
-.stCheckbox > label {{
-    color: #6b6b6b !important;
+}
+.stCheckbox > label {
+    color: #6B5A3A !important;
     font-size: 11px !important;
-}}
+}
 
-/* ── Sub-label ── */
-.sub-lbl {{
+/* ── Number input ── */
+.stNumberInput input {
+    background: #FFFDF7 !important;
+    border: 1.5px solid #D8C8A8 !important;
+    border-radius: 8px !important;
+    color: #1C1412 !important;
+    font-size: 13px !important;
+}
+.stNumberInput input:focus {
+    border-color: #C49A35 !important;
+    outline: none !important;
+}
+.stNumberInput label {
+    color: #1A2B5E !important;
+    font-size: 11.5px !important;
+    font-weight: 600 !important;
+}
+
+/* ── Sub label ── */
+.sub-lbl {
     font-size: 11.5px;
     font-weight: 600;
-    letter-spacing: 0.03em;
-    color: #6b6b6b;
-    margin: 16px 0 8px;
-}}
+    letter-spacing: 0.04em;
+    color: #6B5A3A;
+    margin: 14px 0 8px;
+}
 
-/* ── Run button ── */
-div[data-testid="stButton"] > button {{
-    background: #2A2A2A !important;
-    color: #fff !important;
+/* ── Buttons ── */
+div[data-testid="stButton"] > button {
+    background: #1A2B5E !important;
+    color: #F9F3E3 !important;
     border: none !important;
-    border-radius: 14px !important;
-    font-family: 'Bricolage Grotesque', sans-serif !important;
+    border-radius: 10px !important;
+    font-family: 'Playfair Display', serif !important;
     font-size: 15px !important;
-    font-weight: 700 !important;
+    font-weight: 600 !important;
     letter-spacing: 0.04em !important;
-    padding: 15px 32px !important;
+    padding: 13px 28px !important;
     width: 100% !important;
-    margin-top: 14px !important;
-    transition: opacity 0.18s ease !important;
-}}
-div[data-testid="stButton"] > button:hover {{
-    opacity: 0.85 !important;
-}}
+    margin-top: 10px !important;
+    transition: background 0.18s, transform 0.1s !important;
+}
+div[data-testid="stButton"] > button:hover {
+    background: #243F8A !important;
+}
+
+/* ── Secondary / reset button ── */
+button[kind="secondary"],
+div[data-testid="stButton"] > button.secondary {
+    background: transparent !important;
+    color: #1A2B5E !important;
+    border: 1.5px solid #C49A35 !important;
+}
 
 /* ── Download button ── */
-div[data-testid="stDownloadButton"] > button {{
-    background: #fff !important;
-    color: #2A2A2A !important;
-    border: 1.5px solid #2A2A2A !important;
-    border-radius: 14px !important;
-    font-family: 'Bricolage Grotesque', sans-serif !important;
-    font-size: 13.5px !important;
-    font-weight: 700 !important;
+div[data-testid="stDownloadButton"] > button {
+    background: #FFFDF7 !important;
+    color: #1A2B5E !important;
+    border: 1.5px solid #C49A35 !important;
+    border-radius: 10px !important;
+    font-family: 'Playfair Display', serif !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
     padding: 12px 24px !important;
     width: 100% !important;
-}}
-div[data-testid="stDownloadButton"] > button:hover {{
-    background: #FAFAFA !important;
-}}
+    margin-top: 6px !important;
+}
+div[data-testid="stDownloadButton"] > button:hover {
+    background: #F9F3E3 !important;
+}
 
 /* ── Log terminal ── */
-.log-box {{
-    background: #1d1d1d;
-    border-radius: 18px;
-    padding: 22px 24px;
+.log-box {
+    background: #0D1530;
+    border: 1px solid #1A2B5E;
+    border-radius: 14px;
+    padding: 20px 22px;
     font-family: 'Inter', monospace;
     font-size: 12px;
     line-height: 1.9;
-    max-height: 520px;
+    max-height: 500px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-all;
-}}
-.log-box::-webkit-scrollbar {{ width: 4px; }}
-.log-box::-webkit-scrollbar-track {{ background: transparent; }}
-.log-box::-webkit-scrollbar-thumb {{ background: #FF8FAE; border-radius: 2px; }}
+}
+.log-box::-webkit-scrollbar { width: 4px; }
+.log-box::-webkit-scrollbar-track { background: transparent; }
+.log-box::-webkit-scrollbar-thumb { background: #C49A35; border-radius: 2px; }
+
+/* ── Per-category box ── */
+.cat-caps-box {
+    background: #FFFDF7;
+    border: 1px solid #D8C8A8;
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin: 8px 0 12px;
+}
+.cat-total {
+    font-family: 'Playfair Display', serif;
+    font-size: 12px;
+    color: #1A2B5E;
+    text-align: right;
+    margin-top: 6px;
+    letter-spacing: 0.03em;
+}
 
 /* ── Misc ── */
-hr {{ border-color: #EDEDED !important; }}
-[data-testid="stHorizontalBlock"] {{ gap: 3rem; }}
-div[data-testid="stAlert"] {{ border-radius: 12px !important; }}
-#MainMenu, footer, header {{ visibility: hidden; }}
+hr { border-color: #D8C8A8 !important; }
+[data-testid="stHorizontalBlock"] { gap: 2.5rem; }
+div[data-testid="stAlert"] { border-radius: 10px !important; }
+#MainMenu, footer, header { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Fixed, melty ice-cream drips along the edges (stay put while the page scrolls) ──
-# Three irregular blob paths — uneven tails, asymmetric lumps, not a clean teardrop
-_BLOB_A = "M20 2 C30 1 40 10 40 22 C40 32 34 36 32 44 C30 52 35 58 31 64 C29 68 25 65 24 58 C23 52 19 56 17 63 C15 69 9 65 11 56 C13 48 5 44 4 33 C2 20 9 3 20 2 Z"
-_BLOB_B = "M22 0 C34 -1 43 11 41 24 C39 35 30 38 27 48 C25 56 29 64 26 72 C24 77 19 73 19 64 C19 54 14 50 10 40 C5 28 9 13 22 0 Z"
-_BLOB_C = "M18 3 C26 -2 36 4 38 14 C40 24 33 26 36 34 C39 42 32 44 33 52 C34 60 27 64 24 58 C21 52 24 46 18 42 C10 38 6 28 8 18 C10 9 12 6 18 3 Z"
-_BLOBS  = [_BLOB_A, _BLOB_B, _BLOB_C]
-
-def _drip(side: str, top: str, size: int, color: str, blob: int = 0, opacity: float = 1.0) -> str:
-    # Most of the shape sits off-screen — only a melty sliver pokes into the page, clear of text
-    edge = f"left:-{size*0.62:.0f}px;" if side == "left" else f"right:-{size*0.62:.0f}px;"
-    return f"""<div class="drip" style="{edge} top:{top}; width:{size}px; height:{size*1.85:.0f}px; opacity:{opacity};">
-        <svg viewBox="0 0 44 78" xmlns="http://www.w3.org/2000/svg">
-          <path d="{_BLOBS[blob % 3]}" fill="{color}"/>
-          <ellipse cx="15" cy="18" rx="4" ry="6" fill="#ffffff" opacity="0.3"/>
-        </svg>
-    </div>"""
-
-DRIPS = "".join([
-    _drip("left",  "8%",  50, "#FF8FAE", blob=0, opacity=0.6),
-    _drip("left",  "34%", 64, "#9BD8FF", blob=1, opacity=0.5),
-    _drip("left",  "62%", 42, "#FFB3C6", blob=2, opacity=0.55),
-    _drip("left",  "86%", 56, "#BFE9FF", blob=0, opacity=0.45),
-    _drip("right", "16%", 58, "#9BD8FF", blob=2, opacity=0.5),
-    _drip("right", "44%", 44, "#FF5C8A", blob=1, opacity=0.5),
-    _drip("right", "70%", 66, "#FFB3C6", blob=0, opacity=0.42),
-    _drip("right", "92%", 40, "#BFE9FF", blob=2, opacity=0.55),
-])
-st.markdown(DRIPS, unsafe_allow_html=True)
-
 # ── Hero ──────────────────────────────────────────────────────────────────────
-TITLE_DRIP = f"""<svg class="title-drip" viewBox="0 0 44 78" xmlns="http://www.w3.org/2000/svg">
-  <path d="{_BLOB_B}" fill="#5E2A50"/>
-  <ellipse cx="15" cy="18" rx="4" ry="6" fill="#ffffff" opacity="0.25"/>
-</svg>"""
-
 st.markdown(f"""
 <div class="hero">
-  <div class="hero-illus">{SORBET_SVG}</div>
-  <div class="hero-title-wrap">
-    <div class="hero-title">Sorbet</div>
-    {TITLE_DRIP}
+  <div class="cart-wrap">
+    <div class="hero-illus">{CART_SVG}</div>
   </div>
+  <div class="hero-title">Sorbet</div>
   <div class="hero-tag">Automated M&amp;A mapping, by Accomplir Advisors</div>
-  <div class="title-rule"><span class="ln"></span><span class="dot"></span><span class="ln"></span></div>
+  <div class="hero-rule">
+    <span class="ln"></span>
+    <span class="fleur">✦ ✦ ✦</span>
+    <span class="ln"></span>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -366,13 +455,11 @@ with col_form:
     )
     is_sellside = mandate_type.startswith("Sell")
 
-    client = st.text_input("Client / company name", placeholder="e.g. Cessna Lifeline Veterinary Healthcare Pvt Ltd")
-    role   = "company being sold" if is_sellside else "acquirer"
-    company_desc = st.text_area(
-        f"Describe the company ({role})",
-        placeholder="Products, scale, geography, any special context — paste freely",
-        height=100,
-    )
+    client       = st.text_input("Client / company name",        placeholder="e.g. Cessna Lifeline Veterinary Healthcare")
+    role         = "company being sold" if is_sellside else "acquirer"
+    company_desc = st.text_area(f"Describe the company ({role})",
+                                placeholder="Products, scale, geography, any special context — paste freely",
+                                height=100)
 
     c1, c2 = st.columns(2)
     with c1:
@@ -391,17 +478,17 @@ with col_form:
 
     st.markdown(
         '<div class="sec">Target Filters '
-        '<span style="font-weight:400;color:#D9A8B8;font-size:11px;text-transform:none;">— all optional</span></div>',
+        '<span style="font-weight:400;color:#B8A888;font-size:11px;text-transform:none;">— all optional</span></div>',
         unsafe_allow_html=True,
     )
 
     c1, c2 = st.columns(2)
     with c1:
-        target_geography = st.text_input("Target geography",     placeholder="Pan-India / South India")
-        revenue_range    = st.text_input("Revenue range",         placeholder=">100 Cr  or  50–500 Cr")
+        target_geography = st.text_input("Target geography",    placeholder="Pan-India / South India")
+        revenue_range    = st.text_input("Revenue range",        placeholder=">100 Cr  or  50–500 Cr")
     with c2:
-        specific_attrs   = st.text_input("Must-have attributes",  placeholder="manufacturing / CRISIL rated")
-        what_looking_for = st.text_input("Specifically seeking",  placeholder="Eastern India / R&D")
+        specific_attrs   = st.text_input("Must-have attributes", placeholder="manufacturing / CRISIL rated")
+        what_looking_for = st.text_input("Specifically seeking", placeholder="Eastern India / R&D")
 
     st.markdown('<div class="sub-lbl">Company types to include</div>', unsafe_allow_html=True)
     type_cols = st.columns(2)
@@ -419,10 +506,89 @@ with col_form:
     st.markdown('<div class="sec">Volume</div>', unsafe_allow_html=True)
     count_labels = [v[0] for v in COUNT_OPTIONS.values()]
     count_choice = st.radio("Companies to map", count_labels, index=3, label_visibility="collapsed")
-    per_cat_cap  = next(cap for lbl, cap in COUNT_OPTIONS.values() if lbl == count_choice)
+    default_cap  = next(cap for lbl, cap in COUNT_OPTIONS.values() if lbl == count_choice)
+
+    # ── Build inp dict (used by both buttons) ─────────────────────────────────
+    inp = {
+        "is_sellside":       is_sellside,
+        "client":            client.strip(),
+        "company_desc":      company_desc.strip(),
+        "sector":            sector.strip(),
+        "sub_sector":        sub_sector.strip(),
+        "geography":         geography.strip(),
+        "motivations":       motivations,
+        "target_geography":  target_geography.strip() or "Pan-India",
+        "revenue_range":     revenue_range.strip()    or "No filter",
+        "specific_attrs":    specific_attrs.strip()   or "None",
+        "what_looking_for":  what_looking_for.strip() or "None",
+        "company_types":     company_types,
+        "exclude_companies": exclude_companies.strip(),
+        "per_cat_cap":       default_cap,
+        "count_label":       count_choice,
+        "date":              datetime.today().strftime("%d-%b-%y"),
+    }
+
+    def _validate():
+        errs = []
+        if not client.strip():       errs.append("Client name is required.")
+        if not company_desc.strip(): errs.append("Company description is required.")
+        if not sector.strip():       errs.append("Sector is required.")
+        if not sub_sector.strip():   errs.append("Sub-sector is required.")
+        if not geography.strip():    errs.append("Client geography is required.")
+        if not motivations:          errs.append("Select at least one M&A motivation.")
+        if not company_types:        errs.append("Select at least one company type.")
+        return errs
 
     st.markdown("<br>", unsafe_allow_html=True)
-    run_btn = st.button("Run Mapping")
+
+    # ── Phase 1: Generate Strategy button ─────────────────────────────────────
+    gen_btn = st.button("Generate Strategy →", key="gen_btn")
+
+    if gen_btn:
+        errs = _validate()
+        if errs:
+            for e in errs:
+                st.error(e)
+        else:
+            class _Q(io.StringIO):
+                def write(self, s): return super().write(s)
+            with st.spinner("Generating mapping strategy…"):
+                with contextlib.redirect_stdout(_Q()):
+                    strategy = generate_strategy(inp)
+            st.session_state.strategy = strategy
+
+    # ── Phase 2: Per-category count inputs + Run button ───────────────────────
+    per_cat_caps = None
+    run_btn      = False
+
+    if "strategy" in st.session_state:
+        strategy = st.session_state.strategy
+        cats     = strategy.get("categories", [])
+
+        st.markdown('<div class="sec">Companies per Category</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cat-caps-box">', unsafe_allow_html=True)
+
+        per_cat_caps = {}
+        for cat in cats:
+            per_cat_caps[cat["name"]] = st.number_input(
+                cat["name"],
+                min_value=1,
+                max_value=500,
+                value=default_cap,
+                step=5,
+                key=f"pcc_{cat['name']}",
+            )
+
+        total_est = sum(per_cat_caps.values())
+        st.markdown(f'<div class="cat-total">≈ {total_est} companies total</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            run_btn = st.button("Run Mapping", key="run_btn")
+        with c2:
+            if st.button("↺ Reset", key="reset_btn"):
+                del st.session_state["strategy"]
 
 # ── Output ────────────────────────────────────────────────────────────────────
 with col_out:
@@ -458,17 +624,9 @@ with col_out:
         )
 
     if run_btn:
-        errors = []
-        if not client.strip():        errors.append("Client name is required.")
-        if not company_desc.strip():  errors.append("Company description is required.")
-        if not sector.strip():        errors.append("Sector is required.")
-        if not sub_sector.strip():    errors.append("Sub-sector is required.")
-        if not geography.strip():     errors.append("Client geography is required.")
-        if not motivations:           errors.append("Select at least one M&A motivation.")
-        if not company_types:         errors.append("Select at least one company type.")
-
-        if errors:
-            for e in errors:
+        errs = _validate()
+        if errs:
+            for e in errs:
                 st.error(e)
             st.stop()
 
@@ -476,83 +634,60 @@ with col_out:
         st.session_state.excel_bytes = None
         download_area.empty()
 
-        inp = {
-            "is_sellside":      is_sellside,
-            "client":           client.strip(),
-            "company_desc":     company_desc.strip(),
-            "sector":           sector.strip(),
-            "sub_sector":       sub_sector.strip(),
-            "geography":        geography.strip(),
-            "motivations":      motivations,
-            "target_geography": target_geography.strip() or "Pan-India",
-            "revenue_range":    revenue_range.strip()    or "No filter",
-            "specific_attrs":   specific_attrs.strip()   or "None",
-            "what_looking_for": what_looking_for.strip() or "None",
-            "company_types":    company_types,
-            "exclude_companies": exclude_companies.strip(),
-            "per_cat_cap":      per_cat_cap,
-            "count_label":      count_choice,
-            "date":             datetime.today().strftime("%d-%b-%y"),
-        }
+        date_tag = datetime.today().strftime("%d%b%y")
+        filename = f"Accomplir - {client} - Mapping - {date_tag}.xlsx"
 
-        import contextlib
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as _tmp:
+            tmp_path = _tmp.name
 
-        add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        add_log(f"  {'Sell-side' if is_sellside else 'Buy-side'}  /  {client}")
-        add_log(f"  {sector}  /  {sub_sector}  /  {geography}")
-        add_log(f"  Volume: {count_choice}")
-        add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        _last_save = [0.0]
 
-        class _Quiet(io.StringIO):
-            def write(self, s):
-                return super().write(s)
+        strategy = st.session_state.strategy
+
+        def _save_partial(partial_enriched: dict):
+            now = _time.monotonic()
+            if now - _last_save[0] < 3.0:
+                return
+            _last_save[0] = now
+            try:
+                class _Q(io.StringIO):
+                    def write(self, s): return super().write(s)
+                with contextlib.redirect_stdout(_Q()):
+                    generate_excel(strategy, partial_enriched, inp, tmp_path)
+                with open(tmp_path, "rb") as f:
+                    data = f.read()
+                n = sum(len(v) for v in partial_enriched.values())
+                st.session_state.excel_bytes    = data
+                st.session_state.excel_filename = filename
+                download_area.download_button(
+                    label=f"Download Excel  ({n} companies so far)",
+                    data=data,
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_partial",
+                )
+            except Exception:
+                pass
 
         try:
-            add_log("\n[1/4] Generating mapping strategy...")
-            cap = _Quiet()
-            with contextlib.redirect_stdout(cap):
-                strategy = generate_strategy(inp)
-            add_log(f"  → {len(strategy['categories'])} categories identified")
+            add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            add_log(f"  {'Sell-side' if is_sellside else 'Buy-side'}  /  {client}")
+            add_log(f"  {sector}  /  {sub_sector}  /  {geography}")
+            add_log(f"  Volume: {count_choice}  ({len(per_cat_caps)} categories)")
+            add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            add_log(f"\n[1/4] Strategy ({len(strategy['categories'])} categories)")
             for c in strategy["categories"]:
-                add_log(f"     • {c['name']}")
+                add_log(f"     • {c['name']}  →  {per_cat_caps.get(c['name'], default_cap)} cos")
 
             add_log("\n[2/4] Building company universe...")
-            discovered = discover_companies(strategy["categories"], inp, on_progress=add_log)
+            discovered = discover_companies(
+                strategy["categories"], inp,
+                on_progress=add_log,
+                per_cat_caps=per_cat_caps,
+            )
             total_disc = sum(len(v) for v in discovered.values())
             add_log(f"  → {total_disc} companies identified")
-
-            date_tag = datetime.today().strftime("%d%b%y")
-            filename = f"Accomplir - {client} - Mapping - {date_tag}.xlsx"
-
-            # Persistent temp file — written after every company so partial results survive crashes
-            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as _tmp:
-                tmp_path = _tmp.name
-
-            _last_save = [0.0]
-
-            def _save_partial(partial_enriched: dict):
-                now = _time.monotonic()
-                # Throttle to at most one save per 3 s to avoid hammering openpyxl
-                if now - _last_save[0] < 3.0:
-                    return
-                _last_save[0] = now
-                try:
-                    with contextlib.redirect_stdout(_Quiet()):
-                        generate_excel(strategy, partial_enriched, inp, tmp_path)
-                    with open(tmp_path, "rb") as f:
-                        data = f.read()
-                    n = sum(len(v) for v in partial_enriched.values())
-                    st.session_state.excel_bytes    = data
-                    st.session_state.excel_filename = filename
-                    download_area.download_button(
-                        label=f"Download Excel  ({n} of {total_disc} companies)",
-                        data=data,
-                        file_name=filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_partial",
-                    )
-                except Exception:
-                    pass
 
             add_log(f"\n[3/4] Enriching {total_disc} companies...")
             enriched = enrich_all(
@@ -563,7 +698,9 @@ with col_out:
             add_log("  → Enrichment complete")
 
             add_log("\n[4/4] Generating Excel...")
-            with contextlib.redirect_stdout(_Quiet()):
+            class _Q(io.StringIO):
+                def write(self, s): return super().write(s)
+            with contextlib.redirect_stdout(_Q()):
                 generate_excel(strategy, enriched, inp, tmp_path)
 
             with open(tmp_path, "rb") as f:

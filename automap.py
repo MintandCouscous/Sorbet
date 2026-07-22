@@ -507,10 +507,10 @@ Return ONLY valid JSON:
     return _json(_ask(prompt, max_tokens=6000))
 
 
-def _companies_for_category(cat: Dict, inp: Dict) -> List[Dict]:
+def _companies_for_category(cat: Dict, inp: Dict, cap: Optional[int] = None) -> List[Dict]:
     """Ask Claude for companies in one category — respects filters and count target."""
     side = "sell-side" if inp["is_sellside"] else "buy-side"
-    cap  = inp.get("per_cat_cap", 65)
+    cap  = cap if cap is not None else inp.get("per_cat_cap", 65)
     geo  = _geo_scope(inp)
 
     # Build filter block — only show non-trivial filters to keep prompt focused
@@ -567,7 +567,12 @@ Return ONLY valid JSON:
 
 
 # ── Company discovery — Claude list + SerpAPI sweep ───────────────────────────
-def discover_companies(categories: List[Dict], inp: Dict, on_progress: Optional[Callable[[str], None]] = None) -> Dict[str, List[Dict]]:
+def discover_companies(
+    categories: List[Dict],
+    inp: Dict,
+    on_progress: Optional[Callable[[str], None]] = None,
+    per_cat_caps: Optional[Dict[str, int]] = None,
+) -> Dict[str, List[Dict]]:
     log = on_progress if on_progress else print
     results  = {}
     excluded = _excluded_set(inp)
@@ -575,10 +580,11 @@ def discover_companies(categories: List[Dict], inp: Dict, on_progress: Optional[
 
     for i, cat in enumerate(categories, 1):
         cat_name = cat["name"]
-        log(f"  [{i}/{len(categories)}] {cat_name}")
+        cat_cap  = (per_cat_caps or {}).get(cat_name, inp.get("per_cat_cap", MAX_COMPANIES_PER_CATEGORY))
+        log(f"  [{i}/{len(categories)}] {cat_name}  (target: {cat_cap})")
 
         # Claude generates companies for this category
-        claude_cos = _companies_for_category(cat, inp)
+        claude_cos = _companies_for_category(cat, inp, cap=cat_cap)
         seen: dict = {}
         for co in claude_cos:
             key = co["name"].lower().strip()
@@ -634,7 +640,7 @@ Rules:
             if skipped:
                 log(f"    Skipped {skipped} already-mapped compan{'y' if skipped == 1 else 'ies'}")
 
-        all_cos = list(seen.values())[:inp.get("per_cat_cap", MAX_COMPANIES_PER_CATEGORY)]
+        all_cos = list(seen.values())[:cat_cap]
         results[cat_name] = all_cos
 
     return results
