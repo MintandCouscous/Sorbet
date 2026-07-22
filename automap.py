@@ -182,12 +182,17 @@ def apollo_email(person: Dict, company_name: str) -> str:
             json=payload,
             timeout=20,
         )
+        if r.status_code == 429:
+            print("    [Apollo people/match rate-limited — skipping]")
+            return ""
         r.raise_for_status()
         p = r.json().get("person") or {}
         email  = p.get("email", "")
         status = p.get("email_status", "")
-        # Return email only if Apollo considers it valid
-        return email if email and status not in ("invalid", "unavailable", "") else ""
+        if not email:
+            print(f"    [Apollo people/match: no email returned — credits may be exhausted]")
+        # Accept email unless Apollo explicitly marks it bad
+        return email if email and status not in ("invalid", "unavailable") else ""
     except Exception as e:
         print(f"    [Apollo email error] {e}")
         return ""
