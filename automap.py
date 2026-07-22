@@ -163,6 +163,35 @@ def apollo_people(company_name: str) -> List[Dict]:
         print(f"    [Apollo error] {e}")
         return []
 
+# ── Apollo — email enrichment via people/match (consumes 1 export credit) ────
+def apollo_email(person: Dict, company_name: str) -> str:
+    """Return verified email from Apollo people/match, or empty string."""
+    if not APOLLO_API_KEY:
+        return ""
+    try:
+        payload: Dict = {"organization_name": company_name, "reveal_personal_emails": False}
+        if person.get("linkedin_url"):
+            payload["linkedin_url"] = person["linkedin_url"]   # best signal
+        else:
+            payload["first_name"] = person.get("first_name", "")
+            # last name is obfuscated from search — omit; org+first+linkedin is enough
+
+        r = requests.post(
+            "https://api.apollo.io/api/v1/people/match",
+            headers={"x-api-key": APOLLO_API_KEY, "Content-Type": "application/json"},
+            json=payload,
+            timeout=20,
+        )
+        r.raise_for_status()
+        p = r.json().get("person") or {}
+        email  = p.get("email", "")
+        status = p.get("email_status", "")
+        # Return email only if Apollo considers it valid
+        return email if email and status not in ("invalid", "unavailable", "") else ""
+    except Exception as e:
+        print(f"    [Apollo email error] {e}")
+        return ""
+
 # ── RocketReach — email lookup (consumes 1 credit per call) ──────────────────
 def rocketreach_email(name: str, company: str, linkedin_url: str = "") -> str:
     """Return a verified email for a person via RocketReach, or empty string."""
@@ -694,15 +723,20 @@ CRITICAL: Only include financial figures explicitly stated in the results. Do no
     people = apollo_people(name)
     time.sleep(0.2)
 
-    # RocketReach Step 3 — verified emails (1 credit each; skipped if key absent)
-    if ROCKETREACH_API_KEY and RR_AVAILABLE:
-        for person in people:
-            fn   = person.get("first_name", "")
-            lo   = person.get("last_name_obfuscated", "")
-            full = f"{fn} {lo}".strip()
-            li   = person.get("linkedin_url", "")
-            person["email"] = rocketreach_email(full, name, linkedin_url=li)
-            time.sleep(0.3)
+    # Email waterfall: Apollo people/match → RocketReach (both cost 1 credit each)
+    for person in people:
+        email  = apollo_email(person, name)
+        source = "Apollo" if email else ""
+        if not email and ROCKETREACH_API_KEY and RR_AVAILABLE:
+            fn     = person.get("first_name", "")
+            lo     = person.get("last_name_obfuscated", "")
+            full   = f"{fn} {lo}".strip()
+            li     = person.get("linkedin_url", "")
+            email  = rocketreach_email(full, name, linkedin_url=li)
+            source = "RocketReach" if email else ""
+        person["email"]        = email
+        person["email_source"] = source
+        time.sleep(0.3)
 
     result["apollo_people"] = people
 
@@ -847,19 +881,17 @@ def _mapping_sheet(wb: Workbook, name: str, companies: List[Dict],
 
 # ── Excel: Decision Makers sheet (Apollo Step 2 output) ──────────────────────
 DM_COLS = [
-    ("S.\nNo.",          5,  "center"),
-    ("Company Name",    28,  "left"),
-    ("Category",        20,  "left"),
-    ("First Name",      14,  "left"),
-    ("Last Name\n(partial)", 16, "left"),
+    ("S.\nNo.",               5,  "center"),
+    ("Company Name",         28,  "left"),
+    ("Category",             20,  "left"),
+    ("First Name",           14,  "left"),
+    ("Last Name\n(partial)", 16,  "left"),
     ("Full Name\n(complete manually)", 22, "left"),
-    ("Title",           28,  "left"),
-    ("Email\n(RocketReach)", 34, "left"),
-    ("Has\nEmail",       9,  "center"),
-    ("Has\nPhone",       9,  "center"),
-    ("Phone",           18,  "left"),
-    ("LinkedIn",        38,  "left"),
-    ("Apollo ID",       28,  "left"),
+    ("Title",                28,  "left"),
+    ("Email",                36,  "left"),
+    ("Email\nSource",        14,  "left"),
+    ("LinkedIn",             38,  "left"),
+    ("Apollo ID",            28,  "left"),
 ]
 
 def _decision_makers_sheet(wb: Workbook, enriched: Dict[str, List[Dict]], date_str: str):
@@ -868,8 +900,8 @@ def _decision_makers_sheet(wb: Workbook, enriched: Dict[str, List[Dict]], date_s
     # Header block
     ws.row_dimensions[1].height = 5
     ws.cell(2, 2, "Accomplir Advisors").font = Font(name="Arial", size=14, bold=True, color=NAVY)
-    ws.cell(3, 2, "Decision Makers — Apollo names · RocketReach emails").font = Font(name="Arial", size=11, italic=True, color=BLUE)
-    ws.cell(4, 2, "Last name is partially masked by Apollo. Emails are auto-fetched via RocketReach where available. Complete 'Full Name' column manually for any gaps.").font = Font(name="Arial", size=9, italic=True, color=GRAY_TEXT)
+    ws.cell(3, 2, "Decision Makers — Apollo names · Apollo/RocketReach emails").font = Font(name="Arial", size=11, italic=True, color=BLUE)
+    ws.cell(4, 2, "Emails fetched automatically: Apollo people/match first, RocketReach as fallback. 'Email Source' shows which service returned it. Complete 'Full Name' manually for any gaps.").font = Font(name="Arial", size=9, italic=True, color=GRAY_TEXT)
     ws.cell(5, 2, date_str).font = Font(name="Arial", size=10, color=DARK_TEXT)
     ws.row_dimensions[7].height = 5
 
@@ -895,10 +927,8 @@ def _decision_makers_sheet(wb: Workbook, enriched: Dict[str, List[Dict]], date_s
                     person.get("last_name_obfuscated", ""),
                     "",   # Full Name — complete manually
                     person.get("title", ""),
-                    person.get("email", ""),          # RocketReach verified email
-                    person.get("has_email", ""),
-                    person.get("has_phone", ""),
-                    "",   # Phone — future
+                    person.get("email", ""),
+                    person.get("email_source", ""),
                     person.get("linkedin_url", ""),
                     person.get("apollo_id", ""),
                 ]
