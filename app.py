@@ -10,6 +10,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 from automap import (
     MOTIVATIONS, COMPANY_TYPES, COUNT_OPTIONS,
     generate_strategy, discover_companies, enrich_all, generate_excel,
+    reset_cost, get_cost_summary,
 )
 
 st.set_page_config(page_title="Sorbet · Accomplir", page_icon="🍧", layout="wide")
@@ -116,179 +117,191 @@ st.markdown(f"""<style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,300..700&family=Inter:wght@300;400;500;600;700&display=swap');
 @keyframes sp {{ 0%,100%{{opacity:.15;transform:scale(.6) rotate(0deg)}} 50%{{opacity:1;transform:scale(1.3) rotate(20deg)}} }}
 @keyframes floatArt {{ 0%,100%{{transform:translateY(0)}} 50%{{transform:translateY(-12px)}} }}
-@keyframes stepIn {{ from{{opacity:0;transform:translateY(14px)}} to{{opacity:1;transform:translateY(0)}} }}
+@keyframes stepIn {{ from{{opacity:0;transform:translateY(18px)}} to{{opacity:1;transform:translateY(0)}} }}
+@keyframes pulse {{ 0%,100%{{opacity:.5}} 50%{{opacity:1}} }}
 
 :root {{ --clr:{color}; }}
-*,html,body,[class*="css"] {{ font-family:'Inter',sans-serif !important; }}
+*,html,body,[class*="css"] {{ font-family:'Inter',sans-serif !important; box-sizing:border-box; }}
 
+/* ─ Full bleed ─ */
 .stApp {{
   background:#FFF5F8 !important;
   background-image:
-    radial-gradient(ellipse at 20% 10%, {color}11 0%,transparent 50%),
-    radial-gradient(ellipse at 80% 90%, #3DD9B510 0%,transparent 50%) !important;
-  min-height:100vh !important;
+    radial-gradient(ellipse 70% 50% at 15% 5%, {color}0D 0%,transparent 100%),
+    radial-gradient(ellipse 60% 50% at 85% 95%, #3DD9B50C 0%,transparent 100%) !important;
 }}
-.block-container {{ padding:0 3.5rem 4rem !important; max-width:100% !important; }}
+#MainMenu,footer,header,[data-testid="stToolbar"],[data-testid="stDecoration"],
+[data-testid="stStatusWidget"] {{ display:none !important; }}
+section[data-testid="stMain"] > div:first-child {{ padding-top:0 !important; }}
+.block-container {{ padding:0 3rem 3rem !important; max-width:100% !important; }}
 
-/* ─ Step nav ─ */
+/* ─ Sticky nav ─ */
 .snav {{
+  position:sticky; top:0; z-index:999;
   display:flex; align-items:center; justify-content:space-between;
-  padding:20px 0 18px; margin-bottom:28px;
-  border-bottom:1.5px solid #FFE4EC;
+  padding:16px 0 14px; margin-bottom:32px;
+  border-bottom:1px solid #FFE4EC;
+  background:rgba(255,245,248,.88); backdrop-filter:blur(18px);
 }}
 .snav-logo {{
-  font-family:'Fraunces',serif; font-style:italic; font-size:24px;
+  font-family:'Fraunces',serif; font-style:italic; font-size:22px;
   color:#8B1A42; letter-spacing:-.01em;
 }}
 .snav-steps {{ display:flex; align-items:center; gap:2px; }}
 .snav-step {{
-  font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
-  padding:7px 15px; border-radius:20px; color:#C0A8B0;
-  display:flex; align-items:center; gap:5px;
+  font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+  padding:6px 13px; border-radius:20px; color:#C0A8B0;
+  display:flex; align-items:center; gap:4px; white-space:nowrap;
 }}
 .snav-step.done  {{ color:var(--clr); background:color-mix(in srgb,var(--clr) 10%,#fff); }}
 .snav-step.active {{
   color:#fff; background:var(--clr);
   box-shadow:0 4px 16px color-mix(in srgb,var(--clr) 38%,transparent);
 }}
-.snav-sep {{ color:#DDD; font-size:11px; padding:0 2px; }}
-.snav-by {{
-  font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:#C0A8B0;
-}}
+.snav-sep {{ color:#DDD; font-size:10px; padding:0 1px; }}
+.snav-by {{ font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:#C0A8B0; }}
 
 /* ─ Step layout ─ */
-.step-enter {{ animation:stepIn .28s ease-out both; }}
+.step-enter {{ animation:stepIn .32s cubic-bezier(.22,.68,0,1.2) both; }}
 .step-label {{
-  font-size:11px; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
-  color:var(--clr); opacity:.65; margin-bottom:6px;
+  font-size:10px; font-weight:700; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--clr); opacity:.7; margin-bottom:8px;
 }}
 .step-title {{
   font-family:'Fraunces',serif; font-style:italic;
-  font-size:clamp(40px,4.5vw,62px); font-weight:400; line-height:1.0;
-  letter-spacing:-.025em; color:#1C1412; margin-bottom:28px;
+  font-size:clamp(38px,4vw,60px); font-weight:400; line-height:1.0;
+  letter-spacing:-.025em; color:#1C1412; margin-bottom:24px;
 }}
 .step-title em {{ color:var(--clr); font-style:inherit; }}
-.step-hint {{
-  font-size:14px; color:#9B7080; line-height:1.6; margin-bottom:24px; max-width:420px;
-}}
+.step-hint {{ font-size:14px; color:#9B7080; line-height:1.65; margin-bottom:28px; max-width:440px; }}
 .art-wrap {{
-  display:flex; justify-content:center; align-items:flex-start; padding-top:16px;
+  display:flex; justify-content:center; align-items:flex-start; padding-top:8px;
   animation:floatArt 5s ease-in-out infinite;
-  filter:drop-shadow(0 22px 40px color-mix(in srgb,{color} 20%,transparent));
+  filter:drop-shadow(0 24px 48px color-mix(in srgb,{color} 22%,transparent));
 }}
 
 /* ─ Inputs ─ */
 .stTextInput>div>div>input,.stTextArea>div>div>textarea {{
-  background:#FFFAFC !important; border:1.5px solid #F0D0DC !important;
-  border-radius:11px !important; color:#1C1412 !important;
-  font-size:14px !important; padding:12px 15px !important;
-  transition:border-color .18s,box-shadow .18s !important;
+  background:#fff !important; border:1.5px solid #EDD8E2 !important;
+  border-radius:12px !important; color:#1C1412 !important;
+  font-size:14px !important; padding:12px 16px !important;
+  transition:border-color .15s,box-shadow .15s !important;
+  box-shadow:0 1px 4px rgba(0,0,0,.04) !important;
 }}
 .stTextInput>div>div>input:focus,.stTextArea>div>div>textarea:focus {{
   border-color:var(--clr) !important;
-  box-shadow:0 0 0 3.5px color-mix(in srgb,var(--clr) 14%,transparent) !important; outline:none !important;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--clr) 12%,transparent) !important; outline:none !important;
 }}
 .stTextInput>div>div>input::placeholder,.stTextArea>div>div>textarea::placeholder {{ color:#CCAABB !important; }}
 .stTextInput label,.stTextArea label {{
-  color:#8B5060 !important; font-size:11.5px !important;
-  font-weight:600 !important; letter-spacing:.04em !important; text-transform:uppercase !important;
+  color:#8B5060 !important; font-size:11px !important;
+  font-weight:700 !important; letter-spacing:.06em !important; text-transform:uppercase !important;
 }}
 .stNumberInput input {{
-  background:#FFFAFC !important; border:1.5px solid #F0D0DC !important;
-  border-radius:9px !important; color:#1C1412 !important; font-size:18px !important;
-  font-weight:600 !important; text-align:center !important;
+  background:#fff !important; border:1.5px solid #EDD8E2 !important;
+  border-radius:10px !important; color:#1C1412 !important; font-size:20px !important;
+  font-weight:700 !important; text-align:center !important;
+  box-shadow:0 1px 4px rgba(0,0,0,.04) !important;
 }}
 .stNumberInput input:focus {{ border-color:var(--clr) !important; }}
-.stNumberInput label {{ color:#8B5060 !important; font-size:11px !important; font-weight:600 !important; letter-spacing:.04em !important; text-transform:uppercase !important; }}
+.stNumberInput label {{ color:#8B5060 !important; font-size:10px !important; font-weight:700 !important; letter-spacing:.06em !important; text-transform:uppercase !important; }}
 div[data-testid="stRadioGroup"] label span {{ color:#1C1412 !important; font-size:14px !important; font-weight:500 !important; }}
-div[data-testid="stRadioGroup"]>label {{ color:#8B5060 !important; font-size:11.5px !important; font-weight:600 !important; letter-spacing:.04em !important; text-transform:uppercase !important; }}
+div[data-testid="stRadioGroup"]>label {{ color:#8B5060 !important; font-size:11px !important; font-weight:700 !important; letter-spacing:.06em !important; text-transform:uppercase !important; }}
 
 /* ─ Pills ─ */
 div[data-testid="stPillsGroup"] button {{
-  border-radius:22px !important; font-size:13px !important; font-weight:500 !important;
-  border:1.5px solid #F0D0DC !important; color:#6B4055 !important; background:#fff !important;
-  padding:7px 16px !important; transition:all .15s !important;
+  border-radius:24px !important; font-size:13px !important; font-weight:500 !important;
+  border:1.5px solid #EDD8E2 !important; color:#6B4055 !important; background:#fff !important;
+  padding:7px 16px !important; transition:all .14s !important;
+  box-shadow:0 1px 3px rgba(0,0,0,.05) !important;
 }}
 div[data-testid="stPillsGroup"] button[aria-pressed="true"] {{
   background:var(--clr) !important; color:#fff !important; border-color:var(--clr) !important;
-  box-shadow:0 3px 12px color-mix(in srgb,var(--clr) 35%,transparent) !important;
+  box-shadow:0 4px 14px color-mix(in srgb,var(--clr) 35%,transparent) !important;
 }}
 div[data-testid="stPillsGroup"]>label {{
-  color:#8B5060 !important; font-size:11.5px !important; font-weight:600 !important;
-  letter-spacing:.04em !important; text-transform:uppercase !important;
+  color:#8B5060 !important; font-size:11px !important; font-weight:700 !important;
+  letter-spacing:.06em !important; text-transform:uppercase !important;
 }}
 
 /* ─ Category cards ─ */
 [data-testid="stVerticalBlockBorderWrapper"] {{
-  border-color:color-mix(in srgb,var(--clr) 22%,#fff) !important;
-  border-radius:16px !important; background:#fff !important;
-  padding:20px 22px 22px !important;
-  box-shadow:0 2px 16px color-mix(in srgb,var(--clr) 8%,transparent) !important;
-  transition:box-shadow .2s !important;
+  border-color:color-mix(in srgb,var(--clr) 18%,#fff) !important;
+  border-radius:18px !important; background:#fff !important;
+  padding:22px 24px 24px !important;
+  box-shadow:0 2px 20px rgba(0,0,0,.05) !important;
+  transition:box-shadow .22s,transform .22s !important;
 }}
 [data-testid="stVerticalBlockBorderWrapper"]:hover {{
-  box-shadow:0 6px 24px color-mix(in srgb,var(--clr) 16%,transparent) !important;
+  box-shadow:0 8px 30px color-mix(in srgb,var(--clr) 14%,rgba(0,0,0,.06)) !important;
+  transform:translateY(-2px) !important;
 }}
-.cat-name {{
-  font-size:17px; font-weight:700; color:#1C1412; line-height:1.2; margin-bottom:4px;
-}}
-.cat-icon {{ font-size:20px; margin-right:6px; }}
+.cat-name {{ font-size:16px; font-weight:700; color:#1C1412; line-height:1.3; margin-bottom:2px; }}
 
-/* ─ Expander ─ */
-[data-testid="stExpander"] summary {{
-  color:color-mix(in srgb,var(--clr) 75%,#555) !important;
-  font-size:11.5px !important; font-weight:600 !important;
-}}
-[data-testid="stExpander"] details[open] summary {{ color:var(--clr) !important; }}
-
-/* ─ Primary button ─ */
+/* ─ Buttons ─ */
 div[data-testid="stButton"]>button[kind="primary"] {{
-  background:linear-gradient(135deg,var(--clr) 0%,color-mix(in srgb,var(--clr) 72%,#000) 100%) !important;
+  background:linear-gradient(135deg,var(--clr) 0%,color-mix(in srgb,var(--clr) 68%,#000) 100%) !important;
   color:#fff !important; border:none !important; border-radius:14px !important;
   font-family:'Fraunces',serif !important; font-style:italic !important;
-  font-size:19px !important; font-weight:400 !important;
-  padding:17px 36px !important; width:100% !important;
-  box-shadow:0 8px 26px color-mix(in srgb,var(--clr) 32%,transparent) !important;
-  transition:opacity .16s,transform .1s,box-shadow .16s !important;
+  font-size:20px !important; font-weight:400 !important;
+  padding:18px 36px !important; width:100% !important;
+  box-shadow:0 8px 28px color-mix(in srgb,var(--clr) 30%,transparent) !important;
+  transition:opacity .15s,transform .12s,box-shadow .15s !important;
+  letter-spacing:-.01em !important;
 }}
 div[data-testid="stButton"]>button[kind="primary"]:hover {{
-  opacity:.9 !important; transform:translateY(-2px) !important;
-  box-shadow:0 14px 34px color-mix(in srgb,var(--clr) 38%,transparent) !important;
+  opacity:.92 !important; transform:translateY(-2px) !important;
+  box-shadow:0 14px 36px color-mix(in srgb,var(--clr) 38%,transparent) !important;
 }}
-div[data-testid="stButton"]>button[kind="primary"]:active {{ transform:translateY(0) !important; }}
-
-/* ─ Secondary button ─ */
+div[data-testid="stButton"]>button[kind="primary"]:active {{ transform:translateY(0) !important; opacity:1 !important; }}
 div[data-testid="stButton"]>button[kind="secondary"] {{
   background:#fff !important; color:#8B5060 !important;
-  border:1.5px solid #F0D0DC !important; border-radius:12px !important;
+  border:1.5px solid #EDD8E2 !important; border-radius:12px !important;
   font-size:14px !important; padding:14px 28px !important; width:100% !important;
-  transition:background .15s !important;
+  transition:background .14s,border-color .14s !important;
 }}
-div[data-testid="stButton"]>button[kind="secondary"]:hover {{ background:#FFF5F8 !important; }}
-
-/* ─ Download button ─ */
+div[data-testid="stButton"]>button[kind="secondary"]:hover {{
+  background:#FFF5F8 !important; border-color:var(--clr) !important;
+}}
 div[data-testid="stDownloadButton"]>button {{
-  background:#fff !important; color:var(--clr) !important;
-  border:2px solid var(--clr) !important; border-radius:14px !important;
+  background:linear-gradient(135deg,var(--clr) 0%,color-mix(in srgb,var(--clr) 68%,#000) 100%) !important;
+  color:#fff !important; border:none !important; border-radius:14px !important;
   font-family:'Fraunces',serif !important; font-style:italic !important;
-  font-size:19px !important; padding:17px 36px !important; width:100% !important; margin-top:10px !important;
-  box-shadow:0 3px 14px color-mix(in srgb,var(--clr) 16%,transparent) !important;
+  font-size:20px !important; padding:18px 36px !important; width:100% !important; margin-top:10px !important;
+  box-shadow:0 8px 28px color-mix(in srgb,var(--clr) 30%,transparent) !important;
 }}
 
 /* ─ Log ─ */
 .log-box {{
-  background:#1C0814; border:1px solid color-mix(in srgb,{color} 22%,transparent);
-  border-radius:16px; padding:20px 24px; font-family:monospace; font-size:11.5px;
-  line-height:1.9; max-height:520px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;
+  background:#130810; border:1px solid color-mix(in srgb,{color} 18%,transparent);
+  border-radius:18px; padding:22px 26px; font-family:'JetBrains Mono','Fira Code',monospace; font-size:11px;
+  line-height:1.95; height:480px; overflow-y:auto; white-space:pre-wrap; word-break:break-word;
 }}
-.log-box::-webkit-scrollbar {{ width:4px; }}
-.log-box::-webkit-scrollbar-thumb {{ background:var(--clr); border-radius:2px; }}
+.log-box::-webkit-scrollbar {{ width:3px; }}
+.log-box::-webkit-scrollbar-thumb {{ background:color-mix(in srgb,var(--clr) 60%,transparent); border-radius:2px; }}
 
-/* ─ Progress bar ─ */
-.prog-bar-wrap {{ background:#F0D0DC; border-radius:6px; height:6px; margin:10px 0 20px; }}
-.prog-bar {{ background:var(--clr); border-radius:6px; height:6px; transition:width .4s ease; }}
+/* ─ Stat tiles ─ */
+.stat-tile {{
+  background:#fff; border:1px solid #EDD8E2; border-radius:14px;
+  padding:16px 18px; text-align:center;
+  box-shadow:0 2px 12px rgba(0,0,0,.04);
+}}
+.stat-val {{ font-family:'Fraunces',serif; font-style:italic; font-size:32px; color:var(--clr); font-weight:400; line-height:1; }}
+.stat-label {{ font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:#9B7080; margin-top:6px; }}
 
-#MainMenu,footer,header {{ visibility:hidden; }}
+/* ─ Error banner ─ */
+.err-banner {{
+  background:#2D0A14; border:1px solid #FF4D7D; border-radius:14px;
+  padding:14px 18px; margin:12px 0; color:#FF6B8A; font-size:13px;
+  font-family:monospace; line-height:1.6;
+}}
+
+/* ─ Progress strip ─ */
+.prog-strip {{ background:#EDD8E2; border-radius:99px; height:5px; margin:6px 0 14px; overflow:hidden; }}
+.prog-fill {{
+  background:linear-gradient(90deg,var(--clr),color-mix(in srgb,var(--clr) 70%,#FF9F00));
+  border-radius:99px; height:5px; transition:width .5s ease;
+}}
 </style>""", unsafe_allow_html=True)
 
 # ── Header nav ────────────────────────────────────────────────────────────────
@@ -502,149 +515,212 @@ elif step == 4:
 
 # ── Step 5 — Run & Results ────────────────────────────────────────────────────
 elif step == 5:
+    _f5    = st.session_state["_form"]
+    client = _f5.get("client", "—")
+    sector = _f5.get("sector", "")
+
     st.markdown('<div class="step-enter">', unsafe_allow_html=True)
     st.markdown(f'<div class="step-label">Step 5 of {N_STEPS}</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step-title"><em>Mapping</em> in Progress</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="step-title"><em>{client}</em> · Mapping</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Layout: left panel | log ──────────────────────────────────────────────
     col_info, col_log = st.columns([2, 3], gap="large")
 
     with col_info:
-        st.markdown(f'<div class="art-wrap" style="animation:floatArt 5s ease-in-out infinite">{SORBET_SVG}</div>', unsafe_allow_html=True)
-        _f5 = st.session_state["_form"]
-        client = _f5.get("client", "—")
-        sector = _f5.get("sector", "")
+        st.markdown(f'<div class="art-wrap">{SORBET_SVG}</div>', unsafe_allow_html=True)
         st.markdown(f"""
-        <div style="margin-top:18px;background:#fff;border:1px solid #FFE4EC;border-radius:14px;padding:18px 20px;">
-          <div style="font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:{color};margin-bottom:10px;">Mandate Summary</div>
-          <div style="font-size:14px;font-weight:600;color:#1C1412;margin-bottom:4px;">{client}</div>
+        <div style="background:#fff;border:1px solid #EDD8E2;border-radius:16px;padding:18px 20px;margin-top:16px;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:{color};margin-bottom:10px;">Mandate</div>
+          <div style="font-size:14px;font-weight:600;color:#1C1412;margin-bottom:3px;">{client}</div>
           <div style="font-size:12px;color:#9B7080;">{sector} · {_f5.get('sub','')}</div>
-          <div style="font-size:12px;color:#9B7080;margin-top:4px;">{_f5.get('geo','')} → {_f5.get('tgeo','Pan-India')}</div>
+          <div style="font-size:12px;color:#9B7080;margin-top:3px;">{_f5.get('geo','')} → {_f5.get('tgeo','Pan-India')}</div>
         </div>""", unsafe_allow_html=True)
+
+        # Live stat tiles
+        stat_area    = st.empty()
+        cost_area    = st.empty()
         download_area = st.empty()
 
     with col_log:
-        log_area = st.empty()
+        log_area   = st.empty()
+        error_area = st.empty()
 
-        def _render_log():
-            html = "\n".join(_colorize(l) for l in st.session_state.log_lines)
-            log_area.markdown(f'<div class="log-box">{html}</div>', unsafe_allow_html=True)
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def _render_log():
+        lines = st.session_state.log_lines
+        html  = "\n".join(_colorize(l) for l in lines)
+        # auto-scroll: push content and use JS trick via a hidden anchor
+        log_area.markdown(
+            f'<div class="log-box" id="logbox">{html}'
+            f'<div id="log-end"></div></div>'
+            f'<script>var lb=document.getElementById("logbox");if(lb)lb.scrollTop=lb.scrollHeight;</script>',
+            unsafe_allow_html=True,
+        )
 
-        def add_log(line: str):
-            st.session_state.log_lines.append(line)
-            _render_log()
+    def add_log(line: str):
+        st.session_state.log_lines.append(line)
+        _render_log()
 
-        if st.session_state.log_lines:
-            _render_log()
+    def _render_stats(done: int, total: int, usd: float):
+        pct = int(done / total * 100) if total else 0
+        stat_area.markdown(f"""
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+          <div class="stat-tile"><div class="stat-val">{done}</div><div class="stat-label">Companies done</div></div>
+          <div class="stat-tile"><div class="stat-val">{total}</div><div class="stat-label">Total found</div></div>
+        </div>
+        <div class="prog-strip" style="margin-top:12px;"><div class="prog-fill" style="width:{pct}%"></div></div>
+        <div style="text-align:right;font-size:10px;color:#9B7080;margin-top:2px;">{pct}%</div>
+        """, unsafe_allow_html=True)
+        cost_area.markdown(
+            f'<div class="stat-tile" style="margin-top:8px;">'
+            f'<div class="stat-val">${usd:.3f}</div>'
+            f'<div class="stat-label">API cost this run</div></div>',
+            unsafe_allow_html=True,
+        )
 
-        if st.session_state.excel_bytes:
-            with col_info:
-                download_area.download_button(
-                    "Download Excel",
-                    data=st.session_state.excel_bytes,
-                    file_name=st.session_state.excel_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+    # Restore log if already running (page rerender)
+    if st.session_state.log_lines:
+        _render_log()
+    if st.session_state.get("_run_cost"):
+        cs = st.session_state["_run_cost"]
+        _render_stats(cs.get("done",0), cs.get("total",0), cs.get("usd",0))
 
-        if st.session_state.run_triggered:
-            st.session_state.run_triggered = False
-            st.session_state.log_lines     = []
-            st.session_state.excel_bytes   = None
+    if st.session_state.excel_bytes:
+        with col_info:
+            download_area.download_button(
+                "⬇ Download Excel",
+                data=st.session_state.excel_bytes,
+                file_name=st.session_state.excel_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
-            strategy = st.session_state.strategy
-            cats     = strategy.get("categories", [])
+    # ── Main run ──────────────────────────────────────────────────────────────
+    if st.session_state.run_triggered:
+        st.session_state.run_triggered = False
+        st.session_state.log_lines     = []
+        st.session_state.excel_bytes   = None
+        st.session_state["_run_cost"]  = {}
+        reset_cost()
 
-            per_cat_caps = st.session_state.get("_per_cat_caps") or {
-                cat["name"]: DEFAULT_CAP for cat in cats
-            }
+        strategy = st.session_state.strategy
+        cats     = strategy.get("categories", [])
+        per_cat_caps = st.session_state.get("_per_cat_caps") or {
+            cat["name"]: DEFAULT_CAP for cat in cats
+        }
 
-            inp      = _build_inp()
-            client   = inp["client"]
-            date_tag = datetime.today().strftime("%d%b%y")
-            filename = f"Accomplir - {client} - Mapping - {date_tag}.xlsx"
+        inp      = _build_inp()
+        date_tag = datetime.today().strftime("%d%b%y")
+        filename = f"Accomplir - {inp['client']} - Mapping - {date_tag}.xlsx"
 
-            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as _tmp:
-                tmp_path = _tmp.name
-            _last_save = [0.0]
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as _tmp:
+            tmp_path = _tmp.name
+        _last_save = [0.0]
+        _done_count = [0]
+        _total_count = [0]
 
-            class _Q(io.StringIO):
-                def write(self, s): return super().write(s)
+        class _Q(io.StringIO):
+            def write(self, s): return super().write(s)
 
-            def _save_partial(partial: dict):
-                now = _time.monotonic()
-                if now - _last_save[0] < 3.0: return
-                _last_save[0] = now
-                try:
-                    with contextlib.redirect_stdout(_Q()):
-                        generate_excel(strategy, partial, inp, tmp_path)
-                    with open(tmp_path, "rb") as f:
-                        data = f.read()
-                    n = sum(len(v) for v in partial.values())
-                    st.session_state.excel_bytes    = data
-                    st.session_state.excel_filename = filename
-                    with col_info:
-                        download_area.download_button(
-                            f"Download Excel  ({n} so far)",
-                            data=data, file_name=filename,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key="dl_partial",
-                        )
-                except Exception:
-                    pass
-
+        def _save_partial(partial: dict):
+            now = _time.monotonic()
+            if now - _last_save[0] < 3.0: return
+            _last_save[0] = now
             try:
-                add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                add_log(f"  {'Sell-side' if inp['is_sellside'] else 'Buy-side'}  ·  {client}")
-                add_log(f"  {inp['sector']}  ·  {inp['sub_sector']}  ·  {inp['geography']}")
-                add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-                add_log("\n[1/4] Strategy ready  ✓")
-                for c in cats:
-                    n = per_cat_caps.get(c["name"], DEFAULT_CAP)
-                    add_log(f"     • {c['name']}  ({n} companies)")
-
-                add_log("\n[2/4] Building universe…")
-                discovered = discover_companies(
-                    cats, inp, on_progress=add_log, per_cat_caps=per_cat_caps)
-                total_disc = sum(len(v) for v in discovered.values())
-                add_log(f"\n  ✓ {total_disc} companies across {len(discovered)} categories")
-
-                add_log(f"\n[3/4] Enriching {total_disc} companies…")
-                enriched = enrich_all(
-                    discovered, inp, on_progress=add_log, on_company_done=_save_partial)
-                add_log(f"\n  ✓ Done  —  {sum(len(v) for v in enriched.values())} companies")
-
-                add_log("\n[4/4] Writing Excel…")
                 with contextlib.redirect_stdout(_Q()):
-                    generate_excel(strategy, enriched, inp, tmp_path)
+                    generate_excel(strategy, partial, inp, tmp_path)
                 with open(tmp_path, "rb") as f:
-                    excel_bytes = f.read()
-                os.unlink(tmp_path)
-
-                st.session_state.excel_bytes    = excel_bytes
+                    data = f.read()
+                n = sum(len(v) for v in partial.values())
+                st.session_state.excel_bytes    = data
                 st.session_state.excel_filename = filename
-                total = sum(len(v) for v in enriched.values())
-
-                add_log(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                add_log(f"  DONE  ·  {total} companies  ·  {filename}")
-                add_log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
+                usd = get_cost_summary()["usd"]
+                _render_stats(n, _total_count[0], usd)
                 with col_info:
                     download_area.download_button(
-                        "Download Excel",
-                        data=excel_bytes, file_name=filename,
+                        f"⬇ Download Excel  ({n} so far)",
+                        data=data, file_name=filename,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_final",
+                        key="dl_partial",
                     )
+            except Exception:
+                pass
 
-            except Exception as e:
-                add_log(f"\n[ERROR] {e}")
-                st.error(f"Something went wrong: {e}")
+        try:
+            add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            add_log(f"  {'Sell-side' if inp['is_sellside'] else 'Buy-side'}  ·  {inp['client']}")
+            add_log(f"  {inp['sector']}  ·  {inp['sub_sector']}  ·  {inp['geography']}")
+            add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            add_log("\n[1/4] Strategy ready  ✓")
+            for c in cats:
+                add_log(f"     • {c['name']}  ({per_cat_caps.get(c['name'], DEFAULT_CAP)} co.)")
+
+            add_log("\n[2/4] Building universe…")
+            discovered = discover_companies(
+                cats, inp, on_progress=add_log, per_cat_caps=per_cat_caps)
+            total_disc = sum(len(v) for v in discovered.values())
+            _total_count[0] = total_disc
+            add_log(f"\n  ✓ {total_disc} companies across {len(discovered)} categories")
+            _render_stats(0, total_disc, get_cost_summary()["usd"])
+
+            add_log(f"\n[3/4] Enriching {total_disc} companies…")
+
+            # Wrap on_company_done to update progress tiles
+            def _on_done(partial: dict):
+                _done_count[0] = sum(len(v) for v in partial.values())
+                _render_stats(_done_count[0], _total_count[0], get_cost_summary()["usd"])
+                _save_partial(partial)
+
+            enriched = enrich_all(
+                discovered, inp, on_progress=add_log, on_company_done=_on_done)
+            total_enr = sum(len(v) for v in enriched.values())
+            add_log(f"\n  ✓ Done  —  {total_enr} companies enriched")
+
+            add_log("\n[4/4] Writing Excel…")
+            with contextlib.redirect_stdout(_Q()):
+                generate_excel(strategy, enriched, inp, tmp_path)
+            with open(tmp_path, "rb") as f:
+                excel_bytes = f.read()
+            os.unlink(tmp_path)
+
+            st.session_state.excel_bytes    = excel_bytes
+            st.session_state.excel_filename = filename
+
+            cs  = get_cost_summary()
+            usd = cs["usd"]
+            st.session_state["_run_cost"] = {"done": total_enr, "total": total_enr, "usd": usd}
+            _render_stats(total_enr, total_enr, usd)
+
+            add_log(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            add_log(f"  DONE  ·  {total_enr} companies  ·  ${usd:.3f} API cost")
+            add_log(f"  {cs['claude_calls']} Claude calls · {cs['serp_calls']} searches · {cs['apollo_calls']} Apollo")
+            add_log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            with col_info:
+                download_area.download_button(
+                    "⬇ Download Excel",
+                    data=excel_bytes, file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_final",
+                )
+
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            add_log(f"\n[ERROR] {type(e).__name__}: {e}")
+            add_log(f"\n{tb}")
+            error_area.markdown(
+                f'<div class="err-banner">⚠ <strong>{type(e).__name__}</strong>: {e}<br>'
+                f'<small style="opacity:.7">Check the log above for the full trace.</small></div>',
+                unsafe_allow_html=True,
+            )
 
     # Start over
     st.markdown("<br>", unsafe_allow_html=True)
     _, _, reset_col = st.columns([1, 3, 1])
     if reset_col.button("← Start Over", key="reset", type="secondary"):
-        for k in ["step","strategy","log_lines","excel_bytes","excel_filename","run_triggered"]:
+        for k in ["step","strategy","log_lines","excel_bytes","excel_filename",
+                  "run_triggered","_run_cost","_form","_per_cat_caps"]:
             st.session_state.pop(k, None)
         st.rerun()

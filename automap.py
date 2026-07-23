@@ -30,6 +30,26 @@ RR_AVAILABLE   = True             # flipped to False on credit exhaustion
 
 claude = anthropic.Anthropic()    # reads ANTHROPIC_API_KEY from env
 
+# ── Cost tracking ─────────────────────────────────────────────────────────────
+_COST: Dict[str, int] = {
+    "input_tokens": 0, "output_tokens": 0, "claude_calls": 0,
+    "serp_calls": 0, "apollo_calls": 0, "rr_calls": 0,
+}
+_INPUT_PRICE  = 3.0   # $/MTok  — claude-sonnet-4-6
+_OUTPUT_PRICE = 15.0  # $/MTok
+
+def reset_cost() -> None:
+    for k in _COST:
+        _COST[k] = 0
+
+def get_cost_usd() -> float:
+    inp = _COST["input_tokens"] / 1_000_000 * _INPUT_PRICE
+    out = _COST["output_tokens"] / 1_000_000 * _OUTPUT_PRICE
+    return round(inp + out, 3)
+
+def get_cost_summary() -> Dict:
+    return {**_COST, "usd": get_cost_usd()}
+
 # ── Excel theme ───────────────────────────────────────────────────────────────
 NAVY       = "1F3864"
 BLUE       = "2E75B6"
@@ -75,6 +95,7 @@ def _serp(query: str, num: int = 10) -> List[Dict]:
             print("    [SerpAPI credits exhausted — enriching from Claude knowledge only]")
             return []
         r.raise_for_status()
+        _COST["serp_calls"] += 1
         return r.json().get("organic_results", [])
     except Exception as e:
         print(f"    [search error] {e}")
@@ -186,12 +207,12 @@ def apollo_email(person: Dict, company_name: str) -> str:
             print("    [Apollo people/match rate-limited — skipping]")
             return ""
         r.raise_for_status()
+        _COST["apollo_calls"] += 1
         p = r.json().get("person") or {}
         email  = p.get("email", "")
         status = p.get("email_status", "")
         if not email:
             print(f"    [Apollo people/match: no email returned — credits may be exhausted]")
-        # Accept email unless Apollo explicitly marks it bad
         return email if email and status not in ("invalid", "unavailable") else ""
     except Exception as e:
         print(f"    [Apollo email error] {e}")
@@ -221,6 +242,7 @@ def rocketreach_email(name: str, company: str, linkedin_url: str = "") -> str:
             print("    [RocketReach credits exhausted — skipping further email lookups]")
             return ""
         r.raise_for_status()
+        _COST["rr_calls"] += 1
         data = r.json()
 
         # Poll up to 3× if the profile is still being assembled
@@ -259,6 +281,9 @@ def _ask(prompt: str, system: str = "", max_tokens: int = 4096) -> str:
         system=system or "You are a senior M&A analyst at Accomplir Advisors, an Indian investment bank.",
         messages=[{"role": "user", "content": prompt}],
     )
+    _COST["input_tokens"]  += resp.usage.input_tokens
+    _COST["output_tokens"] += resp.usage.output_tokens
+    _COST["claude_calls"]  += 1
     return resp.content[0].text
 
 def _json(text: str) -> Any:
@@ -643,8 +668,8 @@ Rules:
                         key = co["name"].lower().strip()
                         if key not in seen:
                             seen[key] = co
-                except Exception:
-                    pass
+                except Exception as e:
+                    log(f"    ↳ [search parse error: {type(e).__name__}: {e}]")
                 time.sleep(0.3)
 
             added = len(seen) - before_search
